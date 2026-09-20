@@ -30,7 +30,7 @@ import {
   syntaxHighlighting,
   type StringStream,
 } from "@codemirror/language";
-import { EditorView } from "@codemirror/view";
+import { EditorView, lineNumbers } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
@@ -46,6 +46,14 @@ import {
 } from "./components/ui/select";
 import { Checkbox } from "./components/ui/checkbox";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -55,7 +63,7 @@ import {
 import "./styles.css";
 import { Cpu8085 } from "./core/cpu";
 import { hex, type Flags, type Listing, type TraceEntry } from "./core/types";
-const samplePrograms = [
+const rawSamplePrograms = [
   {
     id: "add",
     name: "Addition of two 8-bit numbers",
@@ -350,6 +358,103 @@ HLT`,
   },
 ] as const;
 
+function formatSampleCode(source: string) {
+  const comments: Record<string, string> = {
+    ORG: "Select the program/data memory address.",
+    LXI: "Load a 16-bit value into a register pair.",
+    MVI: "Load an immediate 8-bit value.",
+    MOV: "Transfer a byte between registers or memory.",
+    ADD: "Add the operand to accumulator A.",
+    ADC: "Add the operand and carry to A.",
+    SUB: "Subtract the operand from accumulator A.",
+    SBB: "Subtract operand and borrow from A.",
+    ANA: "AND the operand with A.",
+    XRA: "XOR the operand with A.",
+    ORA: "OR the operand with A.",
+    CMP: "Compare the operand with accumulator A.",
+    INR: "Increment the operand by one.",
+    DCR: "Decrement the operand by one.",
+    INX: "Increment a register pair.",
+    DCX: "Decrement a register pair.",
+    DAD: "Add the register pair to HL.",
+    JMP: "Jump unconditionally to a label/address.",
+    JNZ: "Jump when the zero flag is clear.",
+    JZ: "Jump when the zero flag is set.",
+    JNC: "Jump when carry is clear.",
+    JC: "Jump when carry is set.",
+    CALL: "Call a subroutine and save the return address.",
+    RET: "Return from the subroutine.",
+    PUSH: "Save a register pair on the stack.",
+    POP: "Restore a register pair from the stack.",
+    STA: "Store accumulator A to memory.",
+    LDA: "Load accumulator A from memory.",
+    SHLD: "Store HL directly to memory.",
+    LHLD: "Load HL directly from memory.",
+    IN: "Read a byte from an input port.",
+    OUT: "Write accumulator A to an output port.",
+    EI: "Enable maskable interrupts.",
+    DI: "Disable maskable interrupts.",
+    HLT: "Stop processor execution.",
+    DB: "Array elements.",
+    DW: "Define a 16-bit word in memory.",
+  };
+
+  let insideLabelBlock = false;
+
+  return source
+    .split("\n")
+    .map((raw) => {
+      const trimmed = raw.trim();
+      if (!trimmed || trimmed.startsWith(";") || trimmed.startsWith("```"))
+        return raw;
+
+      const match = trimmed.match(/^([A-Za-z_.$][\w.$]*:)?\s*([A-Za-z]+)/);
+      if (!match) return raw;
+
+      const label = match[1] ?? "";
+      const op = match[2].toUpperCase();
+      const rest = trimmed.slice(label.length).trim();
+      const commentIndex = rest.indexOf(";");
+      const codePart =
+        commentIndex >= 0 ? rest.slice(0, commentIndex).trimEnd() : rest;
+      const comment =
+        commentIndex >= 0
+          ? rest.slice(commentIndex + 1).trim()
+          : (comments[op] ?? "");
+
+      if (op === "ORG") insideLabelBlock = false;
+      else if (label) insideLabelBlock = true;
+
+      let formatted: string;
+
+      if (op === "ORG") {
+        // ORG directives always start at column 1.
+        formatted = codePart;
+      } else if (label) {
+        // Labels occupy the first 8 columns; their instruction starts after it.
+        formatted = `${label.padEnd(8)}${codePart}`;
+      } else if (op === "DB" || op === "DW") {
+        // Data is visually separated from directives.
+        formatted = `        ${codePart}`;
+      } else if (insideLabelBlock) {
+        // Instructions belonging to a labelled block line up under the opcode.
+        formatted = `        ${codePart}`;
+      } else {
+        // Top-level instructions start at column 1.
+        formatted = codePart;
+      }
+
+      if (!comment) return formatted;
+      return `${formatted.padEnd(34)}; ${comment}`;
+    })
+    .join("\n");
+}
+
+const samplePrograms = rawSamplePrograms.map((sample) => ({
+  ...sample,
+  code: formatSampleCode(sample.code),
+}));
+
 const starter = samplePrograms[0].code;
 const cpu = new Cpu8085();
 type CpuHistoryState = {
@@ -551,7 +656,12 @@ const asmEditorTheme = EditorView.theme(
       border: "none",
       paddingLeft: "6px",
     },
-    ".cm-lineNumbers .cm-gutterElement": { padding: "0 10px 0 6px" },
+    ".cm-lineNumbers .cm-gutterElement": {
+      padding: "0 10px 0 6px",
+      minWidth: "34px",
+      cursor: "pointer",
+      userSelect: "none",
+    },
     ".cm-activeLine": { backgroundColor: "rgba(56,189,248,0.06)" },
     ".cm-activeLineGutter": {
       backgroundColor: "transparent",
@@ -589,6 +699,17 @@ const asmEditorTheme = EditorView.theme(
     ".cm-panels input, .cm-panels button": {
       fontFamily: "inherit",
       fontSize: "12px",
+    },
+    ".asm-breakpoint-gutter": { backgroundColor: "transparent", width: "18px" },
+    ".asm-breakpoint-marker": {
+      width: "9px",
+      height: "9px",
+      borderRadius: "999px",
+      border: "1px solid #fb7185",
+      background: "#fb7185",
+      padding: "0",
+      cursor: "pointer",
+      boxShadow: "0 0 7px rgba(251,113,133,.55)",
     },
     ".cm-foldPlaceholder": {
       backgroundColor: "#1e293b",
@@ -634,6 +755,40 @@ const asmExtensions = [
   syntaxHighlighting(asmHighlight),
   asmEditorTheme,
 ];
+
+function breakpointEditorHandler(
+  breakpoints: Set<number>,
+  setBreakpoints: React.Dispatch<React.SetStateAction<Set<number>>>,
+) {
+  return EditorView.domEventHandlers({
+    mousedown(event, view) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return false;
+
+      // Only clicks on the actual line-number gutter create/remove breakpoints.
+      if (!target.closest(".cm-lineNumbers")) return false;
+
+      const pos = view.posAtCoords({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      if (pos == null) return false;
+
+      const lineNo = view.state.doc.lineAt(pos).number;
+      setBreakpoints((current) => {
+        const next = new Set(current);
+        if (next.has(lineNo)) next.delete(lineNo);
+        else next.add(lineNo);
+        return next;
+      });
+
+      event.preventDefault();
+      event.stopPropagation();
+      return true;
+    },
+  });
+}
+
 function highlight(line: string) {
   const [body, comment = ""] = line.split(";");
   return (
@@ -1048,27 +1203,84 @@ async function writeRichClipboard(html: string, text: string) {
   if (!ok) throw new Error("Clipboard copy failed");
 }
 
-type CycleTiming = {
-  machineCycles: string;
-  tStates: string;
-  bytes: number;
-  category: string;
-  note: string;
+type DiagramCycle = {
+  name: "OF" | "MR" | "MW" | "IOR" | "IOW";
+  t: number;
+  description: string;
+  address?: string;
+  data?: string;
 };
-function timingFor(line: Listing): CycleTiming | null {
+
+function timingCyclesFor(line: Listing): DiagramCycle[] {
   const { op, args } = splitSource(line.text);
-  if (!op || op === "DB" || op === "DW" || op === "ORG" || op === "END")
-    return null;
-  const size = line.bytes.length;
-  const reg = (args[0] ?? "").toUpperCase();
-  const isM = args.some((x) => x.toUpperCase() === "M");
-  const one = (mc: number, t: number, note = "") => ({
-    machineCycles: String(mc),
-    tStates: String(t),
-    bytes: size,
-    category: "Instruction",
-    note,
+  if (!op || ["DB", "DW", "ORG", "END"].includes(op)) return [];
+
+  const bytes = line.bytes;
+  const byte = (index: number) =>
+    bytes[index] === undefined ? "--" : hex(bytes[index]);
+  const addr = (offset: number) =>
+    hex((line.address + offset) & 0xffff, 4) + "H";
+  const target = () => {
+    const value = parse(args[0]);
+    return Number.isNaN(value)
+      ? args[0]?.toUpperCase() || "ADDR"
+      : `${hex(value, 4)}H`;
+  };
+  const of = (
+    t = op === "HLT"
+      ? 5
+      : [
+            "CALL",
+            "PUSH",
+            "POP",
+            "RST",
+            "CNZ",
+            "CZ",
+            "CNC",
+            "CC",
+            "CPO",
+            "CPE",
+            "CP",
+            "CM",
+            "RET",
+            "RNZ",
+            "RZ",
+            "RNC",
+            "RC",
+            "RPO",
+            "RPE",
+            "RP",
+            "RM",
+          ].includes(op)
+        ? 6
+        : 4,
+  ): DiagramCycle => ({
+    name: "OF",
+    t,
+    description: "Opcode fetch",
+    address: `${hex(line.address, 4)}H`,
+    data: byte(0),
   });
+  const mr = (offset: number, description: string): DiagramCycle => ({
+    name: "MR",
+    t: 3,
+    description,
+    address: addr(offset),
+    data: byte(offset),
+  });
+  const memRead = (description: string, address = "HL"): DiagramCycle => ({
+    name: "MR",
+    t: 3,
+    description,
+    address,
+  });
+  const memWrite = (description: string, address = "HL"): DiagramCycle => ({
+    name: "MW",
+    t: 3,
+    description,
+    address,
+  });
+
   if (
     op === "NOP" ||
     [
@@ -1085,65 +1297,791 @@ function timingFor(line: Listing): CycleTiming | null {
       "DI",
     ].includes(op)
   )
-    return one(1, 4);
-  if (op === "HLT") return one(1, 5, "Processor enters HALT state.");
-  if (op === "MOV")
-    return one(
-      isM ? 2 : 1,
-      isM ? 7 : 5,
-      isM
-        ? "Memory operand adds a memory-read/write cycle."
-        : "Register-to-register transfer.",
-    );
-  if (op === "MVI") return one(isM ? 2 : 2, isM ? 10 : 7);
-  if (op === "LXI") return one(3, 10);
+    return [of(4)];
+  if (op === "HLT") return [of(5)];
+
+  if (op === "MOV") {
+    if (args[1]?.toUpperCase() === "M")
+      return [of(), memWrite("Write register to memory")];
+    if (args[0]?.toUpperCase() === "M")
+      return [of(), memRead("Read memory operand")];
+    return [of()];
+  }
+
+  if (op === "MVI") {
+    if (args[0]?.toUpperCase() === "M")
+      return [
+        of(),
+        mr(1, "Read immediate byte"),
+        memWrite("Write immediate byte to memory"),
+      ];
+    return [of(), mr(1, "Read immediate byte")];
+  }
+
+  if (op === "LXI")
+    return [
+      of(),
+      mr(1, "Read low-order immediate byte"),
+      mr(2, "Read high-order immediate byte"),
+    ];
+
   if (["ADD", "ADC", "SUB", "SBB", "ANA", "XRA", "ORA", "CMP"].includes(op))
-    return one(isM ? 2 : 1, isM ? 7 : 4);
-  if (["INR", "DCR"].includes(op)) return one(isM ? 2 : 1, isM ? 10 : 5);
-  if (["INX", "DCX", "DAD", "INR", "DCR"].includes(op)) return one(1, 6);
-  if (["JMP"].includes(op)) return one(3, 10);
+    return args.some((x) => x.toUpperCase() === "M")
+      ? [of(), memRead("Read memory operand")]
+      : [of()];
+
+  if (["INR", "DCR"].includes(op))
+    return args[0]?.toUpperCase() === "M"
+      ? [
+          of(),
+          memRead("Read memory operand"),
+          memWrite("Write modified memory operand"),
+        ]
+      : [of(5)];
+
+  if (["INX", "DCX", "DAD"].includes(op)) return [of(6)];
+
+  if (op === "JMP")
+    return [
+      of(),
+      mr(1, "Read low-order target address"),
+      mr(2, "Read high-order target address"),
+    ];
+
   if (["JNZ", "JZ", "JNC", "JC", "JPO", "JPE", "JP", "JM"].includes(op))
-    return one(
-      2,
-      7,
-      "Conditional timing depends on whether the branch is taken (3 MC / 10 T when taken).",
-    );
-  if (op === "CALL") return one(5, 18);
-  if (["CNZ", "CZ", "CNC", "CC", "CPO", "CPE", "CP", "CM"].includes(op))
-    return one(
-      3,
-      9,
-      "Conditional call: 3 MC / 9 T if not taken; 5 MC / 18 T if taken.",
-    );
-  if (op === "RET") return one(3, 10);
+    return [
+      of(),
+      mr(1, "Read low-order target address"),
+      mr(2, "Read high-order target address"),
+    ];
+
+  if (
+    op === "CALL" ||
+    ["CNZ", "CZ", "CNC", "CC", "CPO", "CPE", "CP", "CM"].includes(op)
+  )
+    return [
+      of(6),
+      mr(1, "Read low-order call address"),
+      mr(2, "Read high-order call address"),
+      memWrite("Push high-order return-address byte", "SP"),
+      memWrite("Push low-order return-address byte", "SP-1"),
+    ];
+
+  if (op === "RET")
+    return [
+      of(6),
+      memRead("Pop low-order return-address byte", "SP"),
+      memRead("Pop high-order return-address byte", "SP+1"),
+    ];
+
   if (["RNZ", "RZ", "RNC", "RC", "RPO", "RPE", "RP", "RM"].includes(op))
-    return one(
-      2,
-      6,
-      "Conditional return: 2 MC / 6 T if not taken; 3 MC / 12 T if taken.",
+    return [
+      of(6),
+      memRead("Pop low-order return-address byte", "SP"),
+      memRead("Pop high-order return-address byte", "SP+1"),
+    ];
+
+  if (op === "STA")
+    return [
+      of(),
+      mr(1, "Read low-order memory address"),
+      mr(2, "Read high-order memory address"),
+      memWrite("Write accumulator A", target()),
+    ];
+  if (op === "LDA")
+    return [
+      of(),
+      mr(1, "Read low-order memory address"),
+      mr(2, "Read high-order memory address"),
+      memRead("Read accumulator A", target()),
+    ];
+  if (op === "SHLD")
+    return [
+      of(),
+      mr(1, "Read low-order memory address"),
+      mr(2, "Read high-order memory address"),
+      memWrite("Write L", target()),
+      memWrite("Write H", `${target()}+1`),
+    ];
+  if (op === "LHLD")
+    return [
+      of(),
+      mr(1, "Read low-order memory address"),
+      mr(2, "Read high-order memory address"),
+      memRead("Read L", target()),
+      memRead("Read H", `${target()}+1`),
+    ];
+
+  if (op === "PUSH")
+    return [
+      of(6),
+      memWrite("Push high-order register byte", "SP"),
+      memWrite("Push low-order register byte", "SP-1"),
+    ];
+  if (op === "POP")
+    return [
+      of(6),
+      memRead("Pop low-order register byte", "SP"),
+      memRead("Pop high-order register byte", "SP+1"),
+    ];
+
+  if (op === "IN")
+    return [
+      of(),
+      mr(1, "Read port number"),
+      {
+        name: "IOR",
+        t: 3,
+        description: "Input port read",
+        address: args[0]?.toUpperCase() || "PORT",
+      },
+    ];
+  if (op === "OUT")
+    return [
+      of(),
+      mr(1, "Read port number"),
+      {
+        name: "IOW",
+        t: 3,
+        description: "Output port write",
+        address: args[0]?.toUpperCase() || "PORT",
+      },
+    ];
+
+  if (op === "STAX")
+    return [
+      of(),
+      memWrite(
+        "Write accumulator A",
+        args[0]?.toUpperCase() === "D" ? "DE" : "BC",
+      ),
+    ];
+  if (op === "LDAX")
+    return [
+      of(),
+      memRead(
+        "Read accumulator A",
+        args[0]?.toUpperCase() === "D" ? "DE" : "BC",
+      ),
+    ];
+  if (op === "PCHL") return [of(5)];
+  if (op === "SPHL") return [of(6)];
+  if (op === "XTHL")
+    return [
+      of(),
+      memRead("Read low-order stack byte", "SP"),
+      memWrite("Write L to stack", "SP"),
+      memRead("Read high-order stack byte", "SP+1"),
+      memWrite("Write H to stack", "SP+1"),
+    ];
+  if (op === "RST")
+    return [
+      of(),
+      memWrite("Push high-order return address", "SP"),
+      memWrite("Push low-order return address", "SP-1"),
+    ];
+
+  return [of()];
+}
+
+type CycleTiming = {
+  machineCycles: string;
+  tStates: string;
+  bytes: number;
+  category: string;
+  note: string;
+};
+
+function timingFor(line: Listing): CycleTiming | null {
+  const cycles = timingCyclesFor(line);
+  if (!cycles.length) return null;
+  const { op } = splitSource(line.text);
+  const note = ["JNZ", "JZ", "JNC", "JC", "JPO", "JPE", "JP", "JM"].includes(op)
+    ? "Conditional jump: 7 T when not taken, 10 T when taken."
+    : ["CNZ", "CZ", "CNC", "CC", "CPO", "CPE", "CP", "CM"].includes(op)
+      ? "Conditional call: 9 T when not taken, 18 T when taken."
+      : ["RNZ", "RZ", "RNC", "RC", "RPO", "RPE", "RP", "RM"].includes(op)
+        ? "Conditional return: 6 T when not taken, 12 T when taken."
+        : "";
+  return {
+    machineCycles: String(cycles.length),
+    tStates: String(cycles.reduce((sum, cycle) => sum + cycle.t, 0)),
+    bytes: line.bytes.length,
+    category: "Instruction",
+    note,
+  };
+}
+
+function TimingWave({
+  cycles,
+  instruction,
+}: {
+  cycles: DiagramCycle[];
+  instruction: string;
+}) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  // One fixed column per T-state. Every machine cycle owns exactly cycle.t columns.
+  const T = 78;
+  const LABEL = 182;
+  const TOP = 86;
+  const ROW = 58;
+  const rows = [
+    "CLK",
+    "A15-A8",
+    "AD7-AD0",
+    "ALE",
+    "IO/M",
+    "S1",
+    "S0",
+    "RD",
+    "WR",
+  ];
+  const totalT = cycles.reduce((sum, c) => sum + c.t, 0);
+  const width = LABEL + totalT * T + 24;
+  const height = TOP + rows.length * ROW + 74;
+
+  const cycleInfo = (name: DiagramCycle["name"]) => {
+    switch (name) {
+      case "OF":
+        return {
+          title: "Opcode Fetch",
+          code: "OF",
+          ioM: "0",
+          s1: "1",
+          s0: "1",
+          control: "Memory / opcode fetch",
+        };
+      case "MR":
+        return {
+          title: "Memory Read",
+          code: "MR",
+          ioM: "0",
+          s1: "1",
+          s0: "0",
+          control: "Memory read",
+        };
+      case "MW":
+        return {
+          title: "Memory Write",
+          code: "MW",
+          ioM: "0",
+          s1: "0",
+          s0: "1",
+          control: "Memory write",
+        };
+      case "IOR":
+        return {
+          title: "I/O Read",
+          code: "IOR",
+          ioM: "1",
+          s1: "1",
+          s0: "0",
+          control: "I/O read",
+        };
+      case "IOW":
+        return {
+          title: "I/O Write",
+          code: "IOW",
+          ioM: "1",
+          s1: "0",
+          s0: "1",
+          control: "I/O write",
+        };
+    }
+  };
+
+  const cycleStarts = (() => {
+    let x = LABEL;
+    return cycles.map((cycle, index) => {
+      const start = x;
+      x += cycle.t * T;
+      return { cycle, index, start, width: cycle.t * T };
+    });
+  })();
+
+  const stateFor = (cycle: DiagramCycle, t: number, row: string) => {
+    const info = cycleInfo(cycle.name);
+    if (row === "CLK") return t % 2 === 1 ? 1 : 0;
+    if (row === "ALE") return t === 1 ? 1 : 0;
+    if (row === "IO/M") return Number(info.ioM);
+    if (row === "S1") return Number(info.s1);
+    if (row === "S0") return Number(info.s0);
+    if (row === "RD")
+      return cycle.name === "MR" || cycle.name === "IOR" ? (t >= 2 ? 0 : 1) : 1;
+    if (row === "WR")
+      return cycle.name === "MW" || cycle.name === "IOW" ? (t >= 2 ? 0 : 1) : 1;
+    return 1;
+  };
+
+  const signalColor = (row: string) => {
+    if (row === "CLK") return "#34d399";
+    if (row === "ALE") return "#60a5fa";
+    if (row === "RD" || row === "WR") return "#f87171";
+    return "#d084ff";
+  };
+
+  const signalPath = (row: string) => {
+    const index = rows.indexOf(row);
+    const center = TOP + index * ROW + ROW / 2 + 4;
+    const high = center - 13;
+    const low = center + 13;
+    let x = LABEL;
+    let previous = 0;
+    const parts = [`M ${x} ${low}`];
+
+    for (const cycle of cycles) {
+      for (let t = 1; t <= cycle.t; t++) {
+        const value = stateFor(cycle, t, row);
+        const nextX = x + T;
+        const target = value ? high : low;
+        const prevY = previous ? high : low;
+        if (value !== previous) {
+          // Small sloped transition like the textbook reference, not a large polygon notch.
+          parts.push(`L ${x + 5} ${prevY}`);
+          parts.push(`L ${x + 12} ${target}`);
+        }
+        parts.push(`L ${nextX} ${target}`);
+        previous = value;
+        x = nextX;
+      }
+    }
+    return parts.join(" ");
+  };
+
+  const busLabel = (
+    cycle: DiagramCycle,
+    row: "A15-A8" | "AD7-AD0",
+    localT: number,
+  ) => {
+    const of = cycle.name === "OF";
+    if (row === "A15-A8") {
+      if (of && localT > 3) return "Decode opcode / next address";
+      if (cycle.address && /^[0-9A-F]{4}H$/i.test(cycle.address))
+        return `${cycle.address.slice(0, 2).toUpperCase()}H · High-order address`;
+      if (cycle.address) return cycle.address;
+      if (cycle.name === "MW") return cycle.address || "Stack address";
+      return "High-order memory address";
+    }
+
+    if (localT === 1) {
+      if (cycle.address && /^[0-9A-F]{4}H$/i.test(cycle.address))
+        return `${cycle.address.slice(2, 4).toUpperCase()}H · Low-order address`;
+      return "Low-order address";
+    }
+    if (of && localT <= 3)
+      return cycle.data ? `${cycle.data}H · Opcode` : "Opcode";
+    if (of) return "Decode opcode / next address";
+    if (cycle.data && localT >= 2) return `${cycle.data}H · Data`;
+    if (cycle.name === "MR") return "Data from memory";
+    if (cycle.name === "MW") return "Data to memory";
+    if (cycle.name === "IOR") return "Data from I/O";
+    if (cycle.name === "IOW") return "Data to I/O";
+    return "";
+  };
+
+  const busGroups = (cycle: DiagramCycle, row: "A15-A8" | "AD7-AD0") => {
+    const values = Array.from({ length: cycle.t }, (_, i) =>
+      busLabel(cycle, row, i + 1),
     );
-  if (["STA", "LDA"].includes(op)) return one(4, 13);
-  if (["SHLD", "LHLD"].includes(op)) return one(5, 16);
-  if (["PUSH"].includes(op)) return one(3, 12);
-  if (["POP"].includes(op)) return one(3, 10);
-  if (["IN", "OUT"].includes(op)) return one(3, 10);
-  if (op === "STAX" || op === "LDAX") return one(2, 7);
-  if (op === "PCHL") return one(1, 5);
-  if (op === "SPHL") return one(1, 6);
-  if (op === "XTHL") return one(5, 18);
-  if (op === "RST") return one(3, 12);
-  return one(
-    1,
-    4,
-    "Timing not explicitly mapped; verify against the 8085 datasheet.",
+    const groups: { value: string; start: number; count: number }[] = [];
+    values.forEach((value, i) => {
+      const last = groups[groups.length - 1];
+      if (last && last.value === value) last.count += 1;
+      else groups.push({ value, start: i, count: 1 });
+    });
+    return groups;
+  };
+
+  const busPath = (x: number, y: number, w: number) => {
+    // Only a subtle 5px chamfer, matching the reference's bus shapes without giant slants.
+    const c = Math.min(5, Math.max(2, w / 12));
+    return `M ${x + c} ${y} H ${x + w - c} L ${x + w} ${y + 12} L ${x + w - c} ${y + 24} H ${x + c} L ${x} ${y + 12} Z`;
+  };
+
+  const drawBusText = (label: string, x: number, y: number, w: number) => {
+    const compact = w < 92;
+    const parts = label.split(" · ");
+    if (compact && parts.length > 1) {
+      return (
+        <text
+          x={x + w / 2}
+          y={y + 10}
+          fill="#f8fafc"
+          fontSize="7.5"
+          textAnchor="middle"
+          fontFamily="monospace"
+        >
+          <tspan x={x + w / 2} dy="0">
+            {parts[0]}
+          </tspan>
+          <tspan x={x + w / 2} dy="9">
+            {parts.slice(1).join(" · ")}
+          </tspan>
+        </text>
+      );
+    }
+    const fontSize = label.length > 27 ? 7.2 : label.length > 20 ? 8 : 9;
+    return (
+      <text
+        x={x + w / 2}
+        y={y + 15}
+        fill="#f8fafc"
+        fontSize={fontSize}
+        textAnchor="middle"
+        fontFamily="monospace"
+      >
+        {label}
+      </text>
+    );
+  };
+
+  const downloadImage = async () => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const clone = svg.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("width", String(width));
+    clone.setAttribute("height", String(height));
+    const source = new XMLSerializer().serializeToString(clone);
+    const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    try {
+      const image = new Image();
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () =>
+          reject(new Error("Could not render timing diagram"));
+        image.src = url;
+      });
+      const scale = 2;
+      const canvas = document.createElement("canvas");
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas unavailable");
+      ctx.fillStyle = "#07101d";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const link = document.createElement("a");
+      link.href = canvas.toDataURL("image/png");
+      link.download = `8085-${
+        instruction
+          .replace(/[^a-z0-9]+/gi, "-")
+          .replace(/^-|-$/g, "")
+          .toLowerCase() || "timing-diagram"
+      }.png`;
+      link.click();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] text-slate-500">
+          Each machine cycle is divided into its own T1, T2, T3… states.
+        </div>
+        <Button size="sm" variant="outline" onClick={downloadImage}>
+          <Download size={14} />
+          Download PNG
+        </Button>
+      </div>
+      <div className="overflow-x-auto rounded-xl border border-slate-700/80 bg-[#07101d] p-2 shadow-inner">
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${width} ${height}`}
+          width={width}
+          height={height}
+          role="img"
+          aria-label={`8085 timing diagram for ${instruction}`}
+          style={{ display: "block", background: "#07101d" }}
+        >
+          <rect width={width} height={height} fill="#07101d" />
+          <text
+            x={16}
+            y={24}
+            fill="#94a3b8"
+            fontSize="12"
+            fontWeight="700"
+            fontFamily="monospace"
+          >
+            8085 TIMING DIAGRAM · {instruction.toUpperCase()}
+          </text>
+          <text
+            x={16}
+            y={43}
+            fill="#64748b"
+            fontSize="9"
+            fontFamily="monospace"
+          >
+            Machine cycles are instruction-specific · T-state grid is one column
+            per clock state
+          </text>
+
+          {/* Machine-cycle header */}
+          {cycleStarts.map(({ cycle, start, width: cycleWidth }) => {
+            const info = cycleInfo(cycle.name);
+            return (
+              <g key={`header-${start}`}>
+                <rect
+                  x={start}
+                  y={TOP - 24}
+                  width={cycleWidth}
+                  height={24}
+                  fill="#0b1727"
+                  stroke="#41536a"
+                />
+                <text
+                  x={start + cycleWidth / 2}
+                  y={TOP - 9}
+                  fill="#67e8f9"
+                  fontSize="10"
+                  fontWeight="700"
+                  textAnchor="middle"
+                  fontFamily="monospace"
+                >
+                  {info.title} · {cycle.t} T-states
+                </text>
+              </g>
+            );
+          })}
+
+          {/* T-state row and exact T-state boundaries */}
+          <rect x={0} y={TOP} width={width} height={24} fill="#091523" />
+          <text
+            x={LABEL - 16}
+            y={TOP + 16}
+            fill="#94a3b8"
+            fontSize="10"
+            textAnchor="end"
+            fontFamily="monospace"
+          >
+            T-STATE
+          </text>
+          {Array.from({ length: totalT }, (_, i) => {
+            const x = LABEL + i * T;
+            return (
+              <g key={`t-${i}`}>
+                <rect
+                  x={x}
+                  y={TOP}
+                  width={T}
+                  height={24}
+                  fill="none"
+                  stroke="#334155"
+                />
+                <text
+                  x={x + T / 2}
+                  y={TOP + 16}
+                  fill="#e2e8f0"
+                  fontSize="9"
+                  fontWeight="700"
+                  textAnchor="middle"
+                  fontFamily="monospace"
+                >
+                  T
+                  {(() => {
+                    let remaining = i;
+                    for (const cycle of cycles) {
+                      if (remaining < cycle.t) return remaining + 1;
+                      remaining -= cycle.t;
+                    }
+                    return 1;
+                  })()}
+                </text>
+              </g>
+            );
+          })}
+
+          {cycleStarts.map(({ start }) => (
+            <line
+              key={`cycle-boundary-${start}`}
+              x1={start}
+              y1={TOP - 24}
+              x2={start}
+              y2={height - 34}
+              stroke="#64748b"
+              strokeWidth="1.5"
+            />
+          ))}
+          <line
+            x1={LABEL + totalT * T}
+            y1={TOP - 24}
+            x2={LABEL + totalT * T}
+            y2={height - 34}
+            stroke="#64748b"
+            strokeWidth="1.5"
+          />
+
+          {rows.map((row, rowIndex) => {
+            const y = TOP + 24 + rowIndex * ROW;
+            const isBus = row === "A15-A8" || row === "AD7-AD0";
+            return (
+              <g key={row}>
+                <rect
+                  x={0}
+                  y={y}
+                  width={width}
+                  height={ROW}
+                  fill={rowIndex % 2 ? "#081421" : "#07101d"}
+                />
+                <line
+                  x1={0}
+                  y1={y + ROW}
+                  x2={width}
+                  y2={y + ROW}
+                  stroke="#26364a"
+                />
+                <text
+                  x={LABEL - 16}
+                  y={y + 32}
+                  fill="#a8b5c7"
+                  fontSize="10"
+                  fontWeight="700"
+                  textAnchor="end"
+                  fontFamily="monospace"
+                >
+                  {row}
+                </text>
+                {Array.from({ length: totalT + 1 }, (_, i) => (
+                  <line
+                    key={`grid-${row}-${i}`}
+                    x1={LABEL + i * T}
+                    y1={y}
+                    x2={LABEL + i * T}
+                    y2={y + ROW}
+                    stroke={
+                      cycleStarts.some(({ start }) => start === LABEL + i * T)
+                        ? "#64748b"
+                        : "#26384d"
+                    }
+                    strokeWidth={
+                      cycleStarts.some(({ start }) => start === LABEL + i * T)
+                        ? 1.5
+                        : 1
+                    }
+                  />
+                ))}
+
+                {isBus ? (
+                  cycleStarts.map(({ cycle, start }) => (
+                    <g key={`${row}-${start}`}>
+                      {busGroups(cycle, row).map((group, gi) => {
+                        const x = start + group.start * T + 2;
+                        const w = group.count * T - 4;
+                        const by = y + 17;
+                        const label = group.value;
+                        return (
+                          <g key={gi}>
+                            <path
+                              d={busPath(x, by, w)}
+                              fill="#0c1c2e"
+                              stroke="#55728f"
+                              strokeWidth="1"
+                            />
+                            {drawBusText(label, x, by, w)}
+                          </g>
+                        );
+                      })}
+                    </g>
+                  ))
+                ) : (
+                  <path
+                    d={signalPath(row)}
+                    fill="none"
+                    stroke={signalColor(row)}
+                    strokeWidth="2.4"
+                    strokeLinecap="square"
+                    strokeLinejoin="miter"
+                  />
+                )}
+
+                {!isBus &&
+                  row !== "CLK" &&
+                  row !== "ALE" &&
+                  cycleStarts.map(({ cycle, start, width: cycleWidth }) => {
+                    const info = cycleInfo(cycle.name);
+                    const value =
+                      row === "IO/M"
+                        ? info.ioM
+                        : row === "S1"
+                          ? info.s1
+                          : row === "S0"
+                            ? info.s0
+                            : row === "RD"
+                              ? cycle.name === "MR" || cycle.name === "IOR"
+                                ? "0"
+                                : "1"
+                              : cycle.name === "MW" || cycle.name === "IOW"
+                                ? "0"
+                                : "1";
+                    return (
+                      <text
+                        key={`${row}-${start}`}
+                        x={start + cycleWidth / 2}
+                        y={y + 14}
+                        fill={
+                          value === "0" && (row === "RD" || row === "WR")
+                            ? "#fca5a5"
+                            : "#aab7c8"
+                        }
+                        fontSize="8"
+                        textAnchor="middle"
+                        fontFamily="monospace"
+                      >
+                        {row} = {value}
+                      </text>
+                    );
+                  })}
+
+                {row === "ALE" &&
+                  cycleStarts.map(({ start, width: cycleWidth }) => (
+                    <text
+                      key={`ale-${start}`}
+                      x={start + cycleWidth / 2}
+                      y={y + 14}
+                      fill="#93c5fd"
+                      fontSize="8"
+                      textAnchor="middle"
+                      fontFamily="monospace"
+                    >
+                      ALE = 1 in T1 · 0 after
+                    </text>
+                  ))}
+              </g>
+            );
+          })}
+
+          {/* Bottom status legend, kept inside the image so it never overflows waveform rows. */}
+          <line
+            x1={LABEL}
+            y1={height - 32}
+            x2={width - 12}
+            y2={height - 32}
+            stroke="#334155"
+          />
+          <text
+            x={LABEL}
+            y={height - 18}
+            fill="#64748b"
+            fontSize="8"
+            fontFamily="monospace"
+          >
+            IO/M: 0 = memory, 1 = I/O · S1/S0 identify machine cycle · RD/WR are
+            active-low
+          </text>
+        </svg>
+      </div>
+    </div>
   );
 }
+
 function CycleTimingCard({ listing }: { listing: Listing[] }) {
   const instructions = listing.filter((line) => timingFor(line));
-  const data = listing.filter((line) => {
-    const { op } = splitSource(line.text);
-    return op === "DB" || op === "DW";
-  });
+  const data = listing.filter((line) =>
+    ["DB", "DW"].includes(splitSource(line.text).op),
+  );
   const totalT = instructions.reduce(
     (sum, line) => sum + Number(timingFor(line)?.tStates ?? 0),
     0,
@@ -1152,18 +2090,25 @@ function CycleTimingCard({ listing }: { listing: Listing[] }) {
     (sum, line) => sum + Number(timingFor(line)?.machineCycles ?? 0),
     0,
   );
+  const [selected, setSelected] = useState(0);
+  const selectedLine = instructions[selected] ?? instructions[0];
+  const selectedTiming = selectedLine ? timingFor(selectedLine)! : null;
+  const cycles = selectedLine ? timingCyclesFor(selectedLine) : [];
+
+  useEffect(() => {
+    if (selected >= instructions.length)
+      setSelected(Math.max(0, instructions.length - 1));
+  }, [instructions.length, selected]);
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <Timer size={17} className="text-cyan-300" />
-          <CardTitle>Instruction cycle analysis</CardTitle>
-        </div>
+        <CardTitle>8085 Timing Diagram</CardTitle>
         <span className="text-xs text-slate-500">
-          Reference 8085 timing for the assembled listing
+          Instruction-specific 8085 machine cycles and T-states
         </span>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         <div className="grid gap-3 sm:grid-cols-4">
           <Metric label="Instructions" value={instructions.length} />
           <Metric label="Machine cycles" value={totalMc} />
@@ -1173,17 +2118,65 @@ function CycleTimingCard({ listing }: { listing: Listing[] }) {
             value={listing.reduce((n, l) => n + l.bytes.length, 0)}
           />
         </div>
+        {selectedLine && selectedTiming && (
+          <div className="rounded-xl border border-cyan-400/20 bg-[#02070d] p-4">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="mb-2 text-xs uppercase tracking-widest text-slate-500">
+                  Select instruction
+                </p>
+                <Select
+                  value={String(selected)}
+                  onValueChange={(value) => setSelected(Number(value))}
+                >
+                  <SelectTrigger className="w-full border-slate-700 bg-slate-950 font-mono text-cyan-100">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="max-w-[760px]">
+                    {instructions.map((line, index) => (
+                      <SelectItem
+                        key={`${line.address}-${line.line}`}
+                        value={String(index)}
+                      >
+                        {`${hex(line.address, 4)}H · ${line.text.trim()}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <span className="rounded bg-amber-400/10 px-2 py-1 font-mono text-xs text-amber-200">
+                  {selectedTiming.machineCycles} MC
+                </span>
+                <span className="rounded bg-fuchsia-400/10 px-2 py-1 font-mono text-xs text-fuchsia-200">
+                  {selectedTiming.tStates} T
+                </span>
+              </div>
+            </div>
+            <TimingWave
+              cycles={cycles}
+              instruction={selectedLine.text.trim()}
+            />
+            <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-400">
+              {cycles.map((cycle, index) => (
+                <span key={index}>
+                  <b className="text-slate-200">{cycle.name}</b> ·{" "}
+                  {cycle.description}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="overflow-auto rounded-lg border border-slate-800">
-          <table className="w-full min-w-[850px] font-mono text-xs">
+          <table className="w-full min-w-[900px] font-mono text-xs">
             <thead className="bg-slate-900/80 text-left text-slate-500">
               <tr>
                 <th className="p-2">#</th>
                 <th className="p-2">Address</th>
                 <th className="p-2">Bytes</th>
                 <th className="p-2">Instruction</th>
-                <th className="p-2">Size</th>
-                <th className="p-2">Machine cycles</th>
-                <th className="p-2">T-states</th>
+                <th className="p-2">MC</th>
+                <th className="p-2">T</th>
                 <th className="p-2">Details</th>
               </tr>
             </thead>
@@ -1193,7 +2186,8 @@ function CycleTimingCard({ listing }: { listing: Listing[] }) {
                 return (
                   <tr
                     key={`${line.address}-${line.line}`}
-                    className="border-t border-slate-900"
+                    onClick={() => setSelected(index)}
+                    className={`cursor-pointer border-t border-slate-900 ${selected === index ? "bg-cyan-400/10" : "hover:bg-slate-900/60"}`}
                   >
                     <td className="p-2 text-slate-500">{index + 1}</td>
                     <td className="p-2 text-blue-300">
@@ -1205,7 +2199,6 @@ function CycleTimingCard({ listing }: { listing: Listing[] }) {
                     <td className="p-2 text-cyan-100">
                       {highlight(line.text)}
                     </td>
-                    <td className="p-2">{timing.bytes}</td>
                     <td className="p-2 text-amber-200">
                       {timing.machineCycles}
                     </td>
@@ -1221,19 +2214,12 @@ function CycleTimingCard({ listing }: { listing: Listing[] }) {
         </div>
         {data.length > 0 && (
           <div className="rounded-lg border border-violet-400/20 bg-violet-400/5 p-3 text-xs text-slate-400">
-            <b className="text-violet-200">
-              Data declarations excluded from cycle totals:
-            </b>{" "}
+            <b className="text-violet-200">Data declarations excluded:</b>{" "}
             {data
               .map((line) => `${hex(line.address, 4)}H · ${line.text.trim()}`)
               .join(" · ")}
           </div>
         )}
-        <p className="text-[11px] text-slate-500">
-          Conditional instructions show their normal not-taken timing in the
-          table; the note includes the taken timing. Runtime CPU counters may
-          differ because the simulator's core uses its own execution accounting.
-        </p>
       </CardContent>
     </Card>
   );
@@ -1264,6 +2250,9 @@ function App() {
     [interruptKind, setInterruptKind] = useState<
       "TRAP" | "RST5.5" | "RST6.5" | "RST7.5" | "INTR"
     >("RST7.5");
+  const [editingRegister, setEditingRegister] = useState<string | null>(null);
+  const [registerValue, setRegisterValue] = useState("");
+  const debuggerListingRef = useRef<HTMLDivElement>(null);
   const sourceKey = `${pc}|${code}`;
   const isStale = assembledKey !== sourceKey; // source changed since last assemble
   const stepRef = useRef<(fromTimer?: boolean) => void>(() => {});
@@ -1430,14 +2419,49 @@ function App() {
     notify(`Restored CPU state at ${hex(cpu.pc, 4)}H.`);
   }
 
-  function triggerInterrupt() {
+  function triggerInterrupt(
+    kind: "TRAP" | "RST5.5" | "RST6.5" | "RST7.5" | "INTR",
+  ) {
     if (isStale && !assemble()) return;
     history.current.push(captureCpuState());
-    injectInterrupt(interruptKind);
+    injectInterrupt(kind);
     flashMemory(cpu.lastWrites);
-    setLastOperation(`${interruptKind} interrupt → ${hex(cpu.pc, 4)}H`);
+    setLastOperation(`${kind} interrupt → ${hex(cpu.pc, 4)}H`);
     rerender();
-    notify(`${interruptKind} interrupt accepted at ${hex(cpu.pc, 4)}H.`);
+    notify(`${kind} interrupt accepted at ${hex(cpu.pc, 4)}H.`);
+  }
+
+  function openRegisterEditor(name: string, value: number) {
+    setEditingRegister(name);
+    setRegisterValue(hex(value, name === "PC" || name === "SP" ? 4 : 2));
+  }
+
+  function saveRegister() {
+    if (!editingRegister) return;
+    const value = parse(registerValue);
+    if (Number.isNaN(value))
+      return notify("Enter a valid hexadecimal value.", "error");
+    const name = editingRegister;
+    if (name === "PC") cpu.pc = value & 0xffff;
+    else if (name === "SP") cpu.sp = value & 0xffff;
+    else if (
+      name === "A" ||
+      name === "B" ||
+      name === "C" ||
+      name === "D" ||
+      name === "E" ||
+      name === "H" ||
+      name === "L"
+    ) {
+      cpu[name.toLowerCase() as "a" | "b" | "c" | "d" | "e" | "h" | "l"] =
+        value & 0xff;
+    }
+    history.current = [];
+    setLastOperation(
+      `${name} manually changed to ${hex(value, name === "PC" || name === "SP" ? 4 : 2)}H`,
+    );
+    setEditingRegister(null);
+    rerender();
   }
   stepRef.current = step; // timer always calls the latest closure
   function run() {
@@ -1717,10 +2741,19 @@ function App() {
                       height="100%"
                       className="h-full"
                       theme="none"
-                      extensions={asmExtensions}
+                      extensions={[
+                        lineNumbers({
+                          formatNumber: (lineNo) =>
+                            breakpoints.has(lineNo)
+                              ? `● ${lineNo}`
+                              : String(lineNo),
+                        }),
+                        ...asmExtensions,
+                        breakpointEditorHandler(breakpoints, setBreakpoints),
+                      ]}
                       onChange={setCode}
                       basicSetup={{
-                        lineNumbers: true,
+                        lineNumbers: false,
                         highlightActiveLine: true,
                         foldGutter: true,
                       }}
@@ -1917,7 +2950,7 @@ function App() {
           </TabsContent>
           <TabsContent value="debug">
             <div className="space-y-5">
-              <Card className="border-cyan-950 bg-gradient-to-r from-slate-950 to-cyan-950/30">
+              <Card className="sticky top-2 z-30 border-cyan-950 bg-[#080d16]/95 shadow-2xl backdrop-blur">
                 <CardContent className="space-y-4 p-4">
                   <div className="flex flex-wrap items-end gap-x-5 gap-y-4">
                     <div className="flex items-center gap-2">
@@ -2014,76 +3047,41 @@ function App() {
                   </div>
                 </CardContent>
               </Card>
-              <Card className="border-violet-400/20 bg-gradient-to-r from-violet-950/30 to-slate-950">
+              <Card className="border-slate-800">
                 <CardHeader>
-                  <div className="flex items-center gap-2">
-                    <Cpu size={17} className="text-violet-300" />
-                    <CardTitle>Interrupt & trap controls</CardTitle>
-                  </div>
+                  <CardTitle>Interrupts</CardTitle>
                   <span className="text-xs text-slate-500">
-                    Inject an interrupt at the current PC for debugger
-                    experiments.
+                    Click an interrupt source to inject it at the current PC.
                   </span>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex flex-wrap items-end gap-3">
-                    <div className="grid gap-1.5">
-                      <Label
-                        htmlFor="interrupt-kind"
-                        className="text-[11px] uppercase tracking-wider text-slate-500"
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                    {(
+                      [
+                        ["TRAP", "0024H"],
+                        ["RST5.5", "002CH"],
+                        ["RST6.5", "0034H"],
+                        ["RST7.5", "003CH"],
+                        ["INTR", "0038H"],
+                      ] as const
+                    ).map(([kind, vector]) => (
+                      <Button
+                        key={kind}
+                        variant="outline"
+                        disabled={running}
+                        onClick={() => triggerInterrupt(kind)}
+                        className="h-auto flex-col gap-1 py-3"
                       >
-                        Interrupt source
-                      </Label>
-                      <Select
-                        value={interruptKind}
-                        onValueChange={(value) =>
-                          setInterruptKind(value as typeof interruptKind)
-                        }
-                      >
-                        <SelectTrigger id="interrupt-kind" className="h-9 w-44">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="TRAP">TRAP · 0024H</SelectItem>
-                          <SelectItem value="RST5.5">
-                            RST 5.5 · 002CH
-                          </SelectItem>
-                          <SelectItem value="RST6.5">
-                            RST 6.5 · 0034H
-                          </SelectItem>
-                          <SelectItem value="RST7.5">
-                            RST 7.5 · 003CH
-                          </SelectItem>
-                          <SelectItem value="INTR">
-                            INTR · simulated RST 7
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Button
-                      className="h-9"
-                      variant="outline"
-                      onClick={triggerInterrupt}
-                      disabled={running}
-                    >
-                      Trigger interrupt
-                    </Button>
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-400">
-                      Current PC:{" "}
-                      <span className="font-mono text-cyan-200">
-                        {hex(cpu.pc, 4)}H
-                      </span>{" "}
-                      · SP:{" "}
-                      <span className="font-mono text-cyan-200">
-                        {hex(cpu.sp, 4)}H
-                      </span>
-                    </div>
+                        <span className="font-semibold">{kind}</span>
+                        <span className="font-mono text-[10px] text-slate-500">
+                          {vector}
+                        </span>
+                      </Button>
+                    ))}
                   </div>
                   <p className="mt-3 text-[11px] text-slate-500">
-                    The debugger pushes the current PC onto the simulated stack
-                    and jumps to the selected vector. INTR is represented as RST
-                    7 because a real INTR acknowledge supplies an external
-                    opcode.
+                    INTR is simulated using vector 0038H because a real 8085
+                    receives an external opcode during INTA.
                   </p>
                 </CardContent>
               </Card>
@@ -2106,12 +3104,21 @@ function App() {
                         ["H", cpu.h],
                         ["L", cpu.l],
                         ["PC", cpu.pc],
+                        ["SP", cpu.sp],
                       ].map(([n, v]) => (
                         <button
                           key={n}
-                          className="rounded-lg border border-slate-800 bg-slate-900/30 p-3 text-left"
+                          onClick={() =>
+                            openRegisterEditor(String(n), Number(v))
+                          }
+                          className="group rounded-lg border border-slate-800 bg-slate-900/30 p-3 text-left transition hover:border-cyan-400/40 hover:bg-cyan-400/5"
                         >
-                          <small className="text-slate-500">{n}</small>
+                          <div className="flex items-center justify-between">
+                            <small className="text-slate-500">{n}</small>
+                            <span className="text-[9px] text-slate-600 opacity-0 transition group-hover:opacity-100">
+                              EDIT
+                            </span>
+                          </div>
                           <b className="block font-mono text-lg text-amber-300">
                             {hex(Number(v), n === "PC" ? 4 : 2)}
                           </b>
@@ -2120,12 +3127,18 @@ function App() {
                     </div>
                     <div className="mt-4 flex gap-2">
                       {Object.entries(cpu.flags).map(([k, v]) => (
-                        <span
+                        <button
                           key={k}
-                          className={`rounded-md border px-3 py-1 font-mono text-xs ${v ? "border-amber-400/40 bg-amber-400/10 text-amber-200" : "border-slate-800 text-slate-500"}`}
+                          onClick={() => {
+                            cpu.flags[k as keyof Flags] ^= 1;
+                            history.current = [];
+                            rerender();
+                          }}
+                          className={`rounded-md border px-3 py-1 font-mono text-xs transition hover:border-cyan-400/40 ${v ? "border-amber-400/40 bg-amber-400/10 text-amber-200" : "border-slate-800 text-slate-500"}`}
+                          title="Toggle flag"
                         >
                           {k.toUpperCase()} {v}
-                        </span>
+                        </button>
                       ))}
                     </div>
                   </CardContent>
@@ -2153,13 +3166,14 @@ function App() {
                 <CardHeader>
                   <CardTitle>Program listing</CardTitle>
                   <span className="text-xs text-slate-500">
-                    Current opcode highlighted
+                    Click ● to toggle a breakpoint · current opcode highlighted
                   </span>
                 </CardHeader>
                 <CardContent>
                   <table className="w-full font-mono text-xs">
                     <thead className="text-left text-slate-500">
                       <tr>
+                        <th>BP</th>
                         <th>Address</th>
                         <th>Opcode</th>
                         <th>Assembly</th>
@@ -2175,6 +3189,21 @@ function App() {
                               : "border-t border-slate-900"
                           }
                         >
+                          <td className="py-2">
+                            <button
+                              aria-label={`Toggle breakpoint on line ${l.line}`}
+                              onClick={() =>
+                                setBreakpoints((current) => {
+                                  const next = new Set(current);
+                                  next.has(l.line)
+                                    ? next.delete(l.line)
+                                    : next.add(l.line);
+                                  return next;
+                                })
+                              }
+                              className={`mx-auto block h-3 w-3 rounded-full border transition ${breakpoints.has(l.line) ? "border-rose-300 bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,.6)]" : "border-slate-700 hover:border-rose-300"}`}
+                            />
+                          </td>
                           <td className="py-2 text-blue-300">
                             {hex(l.address, 4)}H
                           </td>
@@ -2190,15 +3219,6 @@ function App() {
           </TabsContent>
           <TabsContent value="cycles">
             <div className="space-y-5">
-              <Card className="border-cyan-400/20 bg-cyan-400/5">
-                <CardContent className="p-4 text-sm text-slate-300">
-                  <b className="text-cyan-200">Instruction-cycle view:</b> every
-                  assembled instruction is shown with its address, machine code,
-                  byte size, machine-cycle count, T-states, and timing notes.
-                  DB/DW data is separated so a data block at 9000H never expands
-                  the program-code view.
-                </CardContent>
-              </Card>
               <CycleTimingCard listing={listing} />
             </div>
           </TabsContent>
@@ -2625,6 +3645,37 @@ function App() {
           </TabsContent>
         </Tabs>
       </main>
+      <Dialog
+        open={editingRegister !== null}
+        onOpenChange={(open) => !open && setEditingRegister(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit register {editingRegister}</DialogTitle>
+            <DialogDescription>
+              Enter a hexadecimal value. 8-bit registers use two hex digits; PC
+              and SP use four.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <Label htmlFor="register-value">Value</Label>
+            <Input
+              id="register-value"
+              value={registerValue}
+              onChange={(e) => setRegisterValue(e.target.value.toUpperCase())}
+              onKeyDown={(e) => e.key === "Enter" && saveRegister()}
+              autoFocus
+              className="font-mono text-lg text-cyan-300"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingRegister(null)}>
+              Cancel
+            </Button>
+            <Button onClick={saveRegister}>Apply</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Toaster richColors theme="dark" position="bottom-right" closeButton />
     </div>
   );
