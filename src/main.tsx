@@ -17,6 +17,7 @@ import {
   Plus,
   RotateCcw,
   StepForward,
+  Timer,
   Trash2,
   Upload,
   Wifi,
@@ -53,18 +54,418 @@ import {
 } from "./components/ui/dropdown-menu";
 import "./styles.css";
 import { Cpu8085 } from "./core/cpu";
-import { hex, type Listing } from "./core/types";
-const starter = `; Addition with result capture and an I/O notification
+import { hex, type Flags, type Listing, type TraceEntry } from "./core/types";
+const samplePrograms = [
+  {
+    id: "add",
+    name: "Addition of two 8-bit numbers",
+    description: "Adds two registers and stores the result at 9000H.",
+    code: `; Addition of two 8-bit numbers
 ORG 8000H
 LXI SP, FFFFH
 MVI A, 14H
 MVI B, 2FH
 ADD B
 STA 9000H
-OUT 01H
+HLT`,
+  },
+  {
+    id: "sub",
+    name: "Subtraction",
+    description: "Subtracts one 8-bit value from another.",
+    code: `; Subtraction
+ORG 8000H
+MVI A, 50H
+MVI B, 18H
+SUB B
+STA 9000H
+HLT`,
+  },
+  {
+    id: "sum-array",
+    name: "Sum an array",
+    description: "Sums four bytes stored in memory.",
+    code: `; Sum four bytes
+ORG 8000H
+LXI H, 9000H
+MVI B, 04H
+MVI A, 00H
+LOOP: ADD M
+INX H
+DCR B
+JNZ LOOP
+STA 9010H
+HLT
+ORG 9000H
+DATA: DB 05H, 03H, 09H, 01H`,
+  },
+  {
+    id: "largest",
+    name: "Find largest number",
+    description: "Finds the largest value in a four-byte array.",
+    code: `; Find largest value
+ORG 8000H
+LXI H, 9000H
+MOV A, M
+INX H
+MVI B, 03H
+LOOP: CMP M
+JNC NEXT
+MOV A, M
+NEXT: INX H
+DCR B
+JNZ LOOP
+STA 9010H
+HLT
+ORG 9000H
+DB 23H, 7AH, 19H, 4CH`,
+  },
+  {
+    id: "smallest",
+    name: "Find smallest number",
+    description: "Finds the smallest value in a four-byte array.",
+    code: `; Find smallest value
+ORG 8000H
+LXI H, 9000H
+MOV A, M
+INX H
+MVI B, 03H
+LOOP: CMP M
+JC NEXT
+MOV A, M
+NEXT: INX H
+DCR B
+JNZ LOOP
+STA 9010H
+HLT
+ORG 9000H
+DB 23H, 7AH, 19H, 4CH`,
+  },
+  {
+    id: "copy-block",
+    name: "Copy a memory block",
+    description: "Copies four bytes from one memory area to another.",
+    code: `; Copy 4 bytes
+ORG 8000H
+LXI H, 9000H
+LXI D, 9010H
+MVI B, 04H
+LOOP: MOV A, M
+STAX D
+INX H
+INX D
+DCR B
+JNZ LOOP
+HLT
+ORG 9000H
+DB 11H, 22H, 33H, 44H`,
+  },
+  {
+    id: "count-zero",
+    name: "Count zero values",
+    description: "Counts zero bytes in an array.",
+    code: `; Count zeros
+ORG 8000H
+LXI H, 9000H
+MVI B, 05H
+MVI C, 00H
+LOOP: MOV A, M
+ORA A
+JNZ NEXT
+INR C
+NEXT: INX H
+DCR B
+JNZ LOOP
+MOV A, C
+STA 9010H
+HLT
+ORG 9000H
+DB 00H, 14H, 00H, 27H, 00H`,
+  },
+  {
+    id: "even-odd",
+    name: "Count even and odd numbers",
+    description: "Separately counts even and odd values.",
+    code: `; Count even and odd values
+ORG 8000H
+LXI H, 9000H
+MVI B, 06H
+MVI C, 00H
+MVI D, 00H
+LOOP: MOV A, M
+ANI 01H
+JZ EVEN
+INR D
+JMP NEXT
+EVEN: INR C
+NEXT: INX H
+DCR B
+JNZ LOOP
+MOV A, C
+STA 9010H
+MOV A, D
+STA 9011H
+HLT
+ORG 9000H
+DB 10H, 11H, 20H, 21H, 30H, 31H`,
+  },
+  {
+    id: "increment-array",
+    name: "Increment an array",
+    description: "Increments every byte in a five-byte array.",
+    code: `; Increment each array element
+ORG 8000H
+LXI H, 9000H
+MVI B, 05H
+LOOP: INR M
+INX H
+DCR B
+JNZ LOOP
+HLT
+ORG 9000H
+DB 10H, 20H, 30H, 40H, 50H`,
+  },
+  {
+    id: "sort-ascending",
+    name: "Bubble sort ascending",
+    description: "Sorts four bytes in ascending order.",
+    code: `; Bubble sort, 4 elements
+ORG 8000H
+MVI C, 03H
+PASS: LXI H, 9000H
+MVI B, 03H
+LOOP: MOV A, M
+INX H
+CMP M
+JC KEEP
+JZ KEEP
+MOV D, M
+MOV M, A
+DCX H
+MOV M, D
+INX H
+KEEP: DCR B
+JNZ LOOP
+DCR C
+JNZ PASS
+HLT
+ORG 9000H
+DB 42H, 11H, 37H, 05H`,
+  },
+  {
+    id: "factorial",
+    name: "Factorial",
+    description: "Computes 5! using repeated addition.",
+    code: `; 5! using repeated addition
+ORG 8000H
+MVI A, 05H
+MVI C, 04H
+OUTER: MOV D, A
+MOV E, C
+MVI A, 00H
+MUL: ADD D
+DCR E
+JNZ MUL
+DCR C
+JNZ OUTER
+STA 9000H
+HLT`,
+  },
+  {
+    id: "delay",
+    name: "Software delay loop",
+    description: "Demonstrates nested decrement loops and timing.",
+    code: `; Software delay
+ORG 8000H
+MVI B, 05H
+OUTER: MVI C, 0FFH
+INNER: DCR C
+JNZ INNER
+DCR B
+JNZ OUTER
+HLT`,
+  },
+  {
+    id: "io",
+    name: "I/O port demonstration",
+    description:
+      "Reads an input port, stores it, then writes it to an output port.",
+    code: `; I/O demonstration
+ORG 8000H
+IN 10H
+STA 9000H
+OUT 11H
+HLT`,
+  },
+  {
+    id: "stack",
+    name: "Stack and subroutine",
+    description: "Demonstrates CALL, RET, PUSH and POP.",
+    code: `; Stack and subroutine demo
+ORG 8000H
+LXI SP, FFFFH
+MVI A, 25H
+CALL DOUBLE
+STA 9000H
+HLT
+DOUBLE: PUSH PSW
+ADD A
+POP PSW
+RET`,
+  },
+  {
+    id: "interrupt",
+    name: "Interrupt service routine",
+    description:
+      "Places an RST 7.5 service routine at 003CH for debugger interrupt testing.",
+    code: `; Interrupt demo
+ORG 8000H
+LXI SP, FFFFH
+MVI A, 10H
+EI
+MAIN: INR A
+JMP MAIN
+ORG 003CH
 PUSH PSW
-HLT`;
+INR A
+STA 9000H
+POP PSW
+EI
+RET`,
+  },
+  {
+    id: "memory-test",
+    name: "Memory read/write test",
+    description: "Writes known bytes and reads them back through HL.",
+    code: `; Memory test
+ORG 8000H
+LXI H, 9000H
+MVI M, 55H
+INX H
+MVI M, AAH
+DCX H
+MOV A, M
+STA 9010H
+HLT`,
+  },
+] as const;
+
+const starter = samplePrograms[0].code;
 const cpu = new Cpu8085();
+type CpuHistoryState = {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  e: number;
+  h: number;
+  l: number;
+  pc: number;
+  sp: number;
+  halted: boolean;
+  inte: boolean;
+  flags: Flags;
+  memory: Uint8Array;
+  inputs: Uint8Array;
+  outputs: Uint8Array;
+  instructions: number;
+  machineCycles: number;
+  tStates: number;
+  trace: TraceEntry[];
+  modified: Set<number>;
+  lastWrites: Set<number>;
+};
+
+function captureCpuState(): CpuHistoryState {
+  return {
+    a: cpu.a,
+    b: cpu.b,
+    c: cpu.c,
+    d: cpu.d,
+    e: cpu.e,
+    h: cpu.h,
+    l: cpu.l,
+    pc: cpu.pc,
+    sp: cpu.sp,
+    halted: cpu.halted,
+    inte: cpu.inte,
+    flags: { ...cpu.flags },
+    memory: cpu.memory.slice(),
+    inputs: cpu.inputs.slice(),
+    outputs: cpu.outputs.slice(),
+    instructions: cpu.instructions,
+    machineCycles: cpu.machineCycles,
+    tStates: cpu.tStates,
+    trace: cpu.trace.map((entry) => ({
+      ...entry,
+      opcode: [...entry.opcode],
+      changes: [...entry.changes],
+    })),
+    modified: new Set(cpu.modified),
+    lastWrites: new Set(cpu.lastWrites),
+  };
+}
+
+function restoreCpuState(state: CpuHistoryState) {
+  cpu.a = state.a;
+  cpu.b = state.b;
+  cpu.c = state.c;
+  cpu.d = state.d;
+  cpu.e = state.e;
+  cpu.h = state.h;
+  cpu.l = state.l;
+  cpu.pc = state.pc;
+  cpu.sp = state.sp;
+  cpu.halted = state.halted;
+  cpu.inte = state.inte;
+  cpu.flags = { ...state.flags };
+  cpu.memory.set(state.memory);
+  cpu.inputs.set(state.inputs);
+  cpu.outputs.set(state.outputs);
+  cpu.instructions = state.instructions;
+  cpu.machineCycles = state.machineCycles;
+  cpu.tStates = state.tStates;
+  cpu.trace = state.trace.map((entry) => ({
+    ...entry,
+    opcode: [...entry.opcode],
+    changes: [...entry.changes],
+  }));
+  cpu.modified = new Set(state.modified);
+  cpu.lastWrites = new Set(state.lastWrites);
+}
+
+function pushWordToStack(value: number) {
+  cpu.sp = (cpu.sp - 1) & 0xffff;
+  cpu.memory[cpu.sp] = (value >> 8) & 0xff;
+  cpu.modified.add(cpu.sp);
+  cpu.lastWrites.add(cpu.sp);
+  cpu.sp = (cpu.sp - 1) & 0xffff;
+  cpu.memory[cpu.sp] = value & 0xff;
+  cpu.modified.add(cpu.sp);
+  cpu.lastWrites.add(cpu.sp);
+}
+
+function injectInterrupt(
+  kind: "TRAP" | "RST5.5" | "RST6.5" | "RST7.5" | "INTR",
+) {
+  const vector = {
+    TRAP: 0x0024,
+    "RST5.5": 0x002c,
+    "RST6.5": 0x0034,
+    "RST7.5": 0x003c,
+    // INTR is acknowledged here as RST 7 for a debugger-friendly
+    // simulation. A real 8085 supplies an instruction on INTA.
+    INTR: 0x0038,
+  }[kind];
+
+  pushWordToStack(cpu.pc);
+  cpu.pc = vector;
+  cpu.halted = false;
+  if (kind !== "TRAP") cpu.inte = false;
+  cpu.machineCycles += 2;
+  cpu.tStates += kind === "TRAP" ? 12 : 12;
+  cpu.lastWrites.clear();
+}
 // Editing is continuous: operands are allowed to be absent while a user is
 // typing, so parsing must never throw into React's render path.
 const parse = (v?: string) =>
@@ -646,6 +1047,197 @@ async function writeRichClipboard(html: string, text: string) {
   box.remove();
   if (!ok) throw new Error("Clipboard copy failed");
 }
+
+type CycleTiming = {
+  machineCycles: string;
+  tStates: string;
+  bytes: number;
+  category: string;
+  note: string;
+};
+function timingFor(line: Listing): CycleTiming | null {
+  const { op, args } = splitSource(line.text);
+  if (!op || op === "DB" || op === "DW" || op === "ORG" || op === "END")
+    return null;
+  const size = line.bytes.length;
+  const reg = (args[0] ?? "").toUpperCase();
+  const isM = args.some((x) => x.toUpperCase() === "M");
+  const one = (mc: number, t: number, note = "") => ({
+    machineCycles: String(mc),
+    tStates: String(t),
+    bytes: size,
+    category: "Instruction",
+    note,
+  });
+  if (
+    op === "NOP" ||
+    [
+      "RLC",
+      "RRC",
+      "RAL",
+      "RAR",
+      "DAA",
+      "CMA",
+      "STC",
+      "CMC",
+      "XCHG",
+      "EI",
+      "DI",
+    ].includes(op)
+  )
+    return one(1, 4);
+  if (op === "HLT") return one(1, 5, "Processor enters HALT state.");
+  if (op === "MOV")
+    return one(
+      isM ? 2 : 1,
+      isM ? 7 : 5,
+      isM
+        ? "Memory operand adds a memory-read/write cycle."
+        : "Register-to-register transfer.",
+    );
+  if (op === "MVI") return one(isM ? 2 : 2, isM ? 10 : 7);
+  if (op === "LXI") return one(3, 10);
+  if (["ADD", "ADC", "SUB", "SBB", "ANA", "XRA", "ORA", "CMP"].includes(op))
+    return one(isM ? 2 : 1, isM ? 7 : 4);
+  if (["INR", "DCR"].includes(op)) return one(isM ? 2 : 1, isM ? 10 : 5);
+  if (["INX", "DCX", "DAD", "INR", "DCR"].includes(op)) return one(1, 6);
+  if (["JMP"].includes(op)) return one(3, 10);
+  if (["JNZ", "JZ", "JNC", "JC", "JPO", "JPE", "JP", "JM"].includes(op))
+    return one(
+      2,
+      7,
+      "Conditional timing depends on whether the branch is taken (3 MC / 10 T when taken).",
+    );
+  if (op === "CALL") return one(5, 18);
+  if (["CNZ", "CZ", "CNC", "CC", "CPO", "CPE", "CP", "CM"].includes(op))
+    return one(
+      3,
+      9,
+      "Conditional call: 3 MC / 9 T if not taken; 5 MC / 18 T if taken.",
+    );
+  if (op === "RET") return one(3, 10);
+  if (["RNZ", "RZ", "RNC", "RC", "RPO", "RPE", "RP", "RM"].includes(op))
+    return one(
+      2,
+      6,
+      "Conditional return: 2 MC / 6 T if not taken; 3 MC / 12 T if taken.",
+    );
+  if (["STA", "LDA"].includes(op)) return one(4, 13);
+  if (["SHLD", "LHLD"].includes(op)) return one(5, 16);
+  if (["PUSH"].includes(op)) return one(3, 12);
+  if (["POP"].includes(op)) return one(3, 10);
+  if (["IN", "OUT"].includes(op)) return one(3, 10);
+  if (op === "STAX" || op === "LDAX") return one(2, 7);
+  if (op === "PCHL") return one(1, 5);
+  if (op === "SPHL") return one(1, 6);
+  if (op === "XTHL") return one(5, 18);
+  if (op === "RST") return one(3, 12);
+  return one(
+    1,
+    4,
+    "Timing not explicitly mapped; verify against the 8085 datasheet.",
+  );
+}
+function CycleTimingCard({ listing }: { listing: Listing[] }) {
+  const instructions = listing.filter((line) => timingFor(line));
+  const data = listing.filter((line) => {
+    const { op } = splitSource(line.text);
+    return op === "DB" || op === "DW";
+  });
+  const totalT = instructions.reduce(
+    (sum, line) => sum + Number(timingFor(line)?.tStates ?? 0),
+    0,
+  );
+  const totalMc = instructions.reduce(
+    (sum, line) => sum + Number(timingFor(line)?.machineCycles ?? 0),
+    0,
+  );
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Timer size={17} className="text-cyan-300" />
+          <CardTitle>Instruction cycle analysis</CardTitle>
+        </div>
+        <span className="text-xs text-slate-500">
+          Reference 8085 timing for the assembled listing
+        </span>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-4">
+          <Metric label="Instructions" value={instructions.length} />
+          <Metric label="Machine cycles" value={totalMc} />
+          <Metric label="T-states" value={totalT} />
+          <Metric
+            label="Program bytes"
+            value={listing.reduce((n, l) => n + l.bytes.length, 0)}
+          />
+        </div>
+        <div className="overflow-auto rounded-lg border border-slate-800">
+          <table className="w-full min-w-[850px] font-mono text-xs">
+            <thead className="bg-slate-900/80 text-left text-slate-500">
+              <tr>
+                <th className="p-2">#</th>
+                <th className="p-2">Address</th>
+                <th className="p-2">Bytes</th>
+                <th className="p-2">Instruction</th>
+                <th className="p-2">Size</th>
+                <th className="p-2">Machine cycles</th>
+                <th className="p-2">T-states</th>
+                <th className="p-2">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {instructions.map((line, index) => {
+                const timing = timingFor(line)!;
+                return (
+                  <tr
+                    key={`${line.address}-${line.line}`}
+                    className="border-t border-slate-900"
+                  >
+                    <td className="p-2 text-slate-500">{index + 1}</td>
+                    <td className="p-2 text-blue-300">
+                      {hex(line.address, 4)}H
+                    </td>
+                    <td className="p-2">
+                      {line.bytes.map((b) => hex(b)).join(" ")}
+                    </td>
+                    <td className="p-2 text-cyan-100">
+                      {highlight(line.text)}
+                    </td>
+                    <td className="p-2">{timing.bytes}</td>
+                    <td className="p-2 text-amber-200">
+                      {timing.machineCycles}
+                    </td>
+                    <td className="p-2 text-fuchsia-200">{timing.tStates}</td>
+                    <td className="p-2 text-slate-400">
+                      {timing.note || timing.category}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {data.length > 0 && (
+          <div className="rounded-lg border border-violet-400/20 bg-violet-400/5 p-3 text-xs text-slate-400">
+            <b className="text-violet-200">
+              Data declarations excluded from cycle totals:
+            </b>{" "}
+            {data
+              .map((line) => `${hex(line.address, 4)}H · ${line.text.trim()}`)
+              .join(" · ")}
+          </div>
+        )}
+        <p className="text-[11px] text-slate-500">
+          Conditional instructions show their normal not-taken timing in the
+          table; the note includes the taken timing. Runtime CPU counters may
+          differ because the simulator's core uses its own execution accounting.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
 function App() {
   const [code, setCode] = useState(starter),
     [pc, setPc] = useState(0x8000),
@@ -668,13 +1260,17 @@ function App() {
     [recentMemory, setRecentMemory] = useState<Set<number>>(new Set()),
     [assembledKey, setAssembledKey] = useState<string | null>(null),
     [showIo, setShowIo] = useState(true),
-    [showIoInput, setShowIoInput] = useState(true);
+    [showIoInput, setShowIoInput] = useState(true),
+    [interruptKind, setInterruptKind] = useState<
+      "TRAP" | "RST5.5" | "RST6.5" | "RST7.5" | "INTR"
+    >("RST7.5");
   const sourceKey = `${pc}|${code}`;
   const isStale = assembledKey !== sourceKey; // source changed since last assemble
   const stepRef = useRef<(fromTimer?: boolean) => void>(() => {});
   const importInput = useRef<HTMLInputElement>(null);
   const programmed = useRef<Set<number>>(new Set());
   const flashTimers = useRef<Map<number, number>>(new Map());
+  const history = useRef<CpuHistoryState[]>([]);
   const rerender = () => setTick((x) => x + 1);
   const assembled = useMemo(() => assembleSource(code, pc), [code, pc]);
   const listing = assembled.listing;
@@ -755,6 +1351,7 @@ function App() {
   }
   function assemble() {
     stop();
+    history.current = [];
     if (assembled.errors.length) {
       notify(assembled.errors[0], "error");
       return false;
@@ -778,6 +1375,7 @@ function App() {
   }
   function resetCpu(silent = false) {
     stop();
+    history.current = [];
     cpu.reset(listing[0]?.address ?? pc);
     setLastOperation("Waiting to execute");
     rerender();
@@ -801,6 +1399,7 @@ function App() {
       return;
     }
     try {
+      history.current.push(captureCpuState());
       const instruction = cpu.step();
       flashMemory(cpu.lastWrites);
       setLastOperation(
@@ -812,9 +1411,33 @@ function App() {
         notify("Program halted normally (HLT).");
       }
     } catch (e) {
+      history.current.pop();
       stop();
       notify((e as Error).message, "error");
     }
+  }
+
+  function stepBack() {
+    stop();
+    const previous = history.current.pop();
+    if (!previous) {
+      notify("No previous CPU state is available.", "error");
+      return;
+    }
+    restoreCpuState(previous);
+    setLastOperation(`Stepped back to ${hex(cpu.pc, 4)}H`);
+    rerender();
+    notify(`Restored CPU state at ${hex(cpu.pc, 4)}H.`);
+  }
+
+  function triggerInterrupt() {
+    if (isStale && !assemble()) return;
+    history.current.push(captureCpuState());
+    injectInterrupt(interruptKind);
+    flashMemory(cpu.lastWrites);
+    setLastOperation(`${interruptKind} interrupt → ${hex(cpu.pc, 4)}H`);
+    rerender();
+    notify(`${interruptKind} interrupt accepted at ${hex(cpu.pc, 4)}H.`);
   }
   stepRef.current = step; // timer always calls the latest closure
   function run() {
@@ -840,10 +1463,39 @@ function App() {
     () => () => flashTimers.current.forEach((t) => window.clearTimeout(t)),
     [],
   );
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.setAttribute("data-8085-print", "true");
+    style.textContent = `
+      @media print {
+        @page { size: A4; margin: 12mm; }
+        body { background: #fff !important; }
+        body * { visibility: hidden !important; }
+        .report-document, .report-document * { visibility: visible !important; }
+        .report-document {
+          position: absolute !important;
+          left: 0 !important;
+          top: 0 !important;
+          width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          box-shadow: none !important;
+          color: #0f172a !important;
+          background: #fff !important;
+        }
+        .report-document section { break-inside: avoid; }
+        .report-document table { break-inside: auto; }
+        .report-document tr { break-inside: avoid; }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => style.remove();
+  }, []);
   useEffect(() => setPageAddress(hex(page * 256, 4)), [page]);
   function setMemory(a: number, v: string) {
     const n = parse(v);
     if (!Number.isNaN(n)) {
+      history.current = [];
       cpu.memory[a] = n & 255;
       cpu.modified.add(a);
       flashMemory([a]);
@@ -867,6 +1519,7 @@ function App() {
       notify("Use hexadecimal bytes, e.g. 14 2F 0A.", "error");
       return;
     }
+    history.current = [];
     values.forEach((v, i) => {
       cpu.memory[(start + i) & 65535] = v & 255;
       cpu.modified.add((start + i) & 65535);
@@ -990,6 +1643,10 @@ function App() {
               <Cpu size={15} />
               Debugger
             </TabsTrigger>
+            <TabsTrigger value="cycles">
+              <Timer size={15} />
+              Instruction cycles
+            </TabsTrigger>
             <TabsTrigger value="memory">
               <MemoryStick size={15} />
               Memory
@@ -1074,12 +1731,37 @@ function App() {
                       <Box size={15} />
                       Assemble program
                     </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={() => setCode(starter)}
-                    >
-                      Load sample
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="secondary">
+                          <BookOpen size={14} />
+                          Samples
+                          <ChevronDown size={14} />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="start"
+                        sideOffset={6}
+                        className="w-80 max-h-[min(70vh,520px)] overflow-y-auto"
+                      >
+                        {samplePrograms.map((sample) => (
+                          <DropdownMenuItem
+                            key={sample.id}
+                            onSelect={() => {
+                              setCode(sample.code);
+                              notify(`Loaded sample: ${sample.name}`);
+                            }}
+                          >
+                            <div className="min-w-0">
+                              <div className="font-medium">{sample.name}</div>
+                              <div className="truncate text-xs text-slate-500">
+                                {sample.description}
+                              </div>
+                            </div>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     <Button
                       variant="outline"
                       onClick={() => setCode("ORG 8000H\n\nHLT")}
@@ -1259,6 +1941,16 @@ function App() {
                       <Button
                         className="h-9"
                         variant="outline"
+                        onClick={stepBack}
+                        disabled={running || history.current.length === 0}
+                        title="Restore the CPU state before the last executed instruction"
+                      >
+                        <ChevronLeft size={15} />
+                        Step back
+                      </Button>
+                      <Button
+                        className="h-9"
+                        variant="outline"
                         onClick={() => resetCpu()}
                       >
                         <RotateCcw size={15} />
@@ -1320,6 +2012,79 @@ function App() {
                     <span className="text-slate-500">Last operation</span>
                     <span className="text-cyan-100">{lastOperation}</span>
                   </div>
+                </CardContent>
+              </Card>
+              <Card className="border-violet-400/20 bg-gradient-to-r from-violet-950/30 to-slate-950">
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <Cpu size={17} className="text-violet-300" />
+                    <CardTitle>Interrupt & trap controls</CardTitle>
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    Inject an interrupt at the current PC for debugger
+                    experiments.
+                  </span>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="grid gap-1.5">
+                      <Label
+                        htmlFor="interrupt-kind"
+                        className="text-[11px] uppercase tracking-wider text-slate-500"
+                      >
+                        Interrupt source
+                      </Label>
+                      <Select
+                        value={interruptKind}
+                        onValueChange={(value) =>
+                          setInterruptKind(value as typeof interruptKind)
+                        }
+                      >
+                        <SelectTrigger id="interrupt-kind" className="h-9 w-44">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="TRAP">TRAP · 0024H</SelectItem>
+                          <SelectItem value="RST5.5">
+                            RST 5.5 · 002CH
+                          </SelectItem>
+                          <SelectItem value="RST6.5">
+                            RST 6.5 · 0034H
+                          </SelectItem>
+                          <SelectItem value="RST7.5">
+                            RST 7.5 · 003CH
+                          </SelectItem>
+                          <SelectItem value="INTR">
+                            INTR · simulated RST 7
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      className="h-9"
+                      variant="outline"
+                      onClick={triggerInterrupt}
+                      disabled={running}
+                    >
+                      Trigger interrupt
+                    </Button>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-400">
+                      Current PC:{" "}
+                      <span className="font-mono text-cyan-200">
+                        {hex(cpu.pc, 4)}H
+                      </span>{" "}
+                      · SP:{" "}
+                      <span className="font-mono text-cyan-200">
+                        {hex(cpu.sp, 4)}H
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-[11px] text-slate-500">
+                    The debugger pushes the current PC onto the simulated stack
+                    and jumps to the selected vector. INTR is represented as RST
+                    7 because a real INTR acknowledge supplies an external
+                    opcode.
+                  </p>
                 </CardContent>
               </Card>
               <div className="grid gap-5 lg:grid-cols-3">
@@ -1423,6 +2188,20 @@ function App() {
               </Card>
             </div>
           </TabsContent>
+          <TabsContent value="cycles">
+            <div className="space-y-5">
+              <Card className="border-cyan-400/20 bg-cyan-400/5">
+                <CardContent className="p-4 text-sm text-slate-300">
+                  <b className="text-cyan-200">Instruction-cycle view:</b> every
+                  assembled instruction is shown with its address, machine code,
+                  byte size, machine-cycle count, T-states, and timing notes.
+                  DB/DW data is separated so a data block at 9000H never expands
+                  the program-code view.
+                </CardContent>
+              </Card>
+              <CycleTimingCard listing={listing} />
+            </div>
+          </TabsContent>
           <TabsContent value="memory">
             <Card>
               <CardHeader>
@@ -1469,6 +2248,22 @@ function App() {
                     onClick={() => setPage(Math.min(255, page + 1))}
                   >
                     <ChevronRight size={16} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPage(cpu.pc >> 8)}
+                    title="Jump to the page containing PC"
+                  >
+                    PC
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPage(cpu.sp >> 8)}
+                    title="Jump to the page containing SP"
+                  >
+                    SP
                   </Button>
                 </div>
               </CardHeader>
@@ -1786,13 +2581,26 @@ function App() {
                     <Download size={15} />
                     Download HTML
                   </Button>
+                  <Button
+                    className="w-full"
+                    variant="outline"
+                    onClick={async () => {
+                      const element = await reportElement();
+                      if (!element)
+                        return notify("Generate the report first.", "error");
+                      window.print();
+                    }}
+                  >
+                    <FileText size={15} />
+                    Print / Save as PDF
+                  </Button>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader>
                   <CardTitle>Report preview</CardTitle>
                   <span className="text-xs text-slate-500">
-                    No execution trace included
+                    Print-ready · use “Print / Save as PDF” for a PDF copy
                   </span>
                 </CardHeader>
                 <CardContent>
@@ -1877,9 +2685,21 @@ function Report({
   showIo: boolean;
   showIoInput: boolean;
 }) {
-  const codeStart = listing[0]?.address ?? 0,
-    codeEnd =
-      (listing.at(-1)?.address ?? 0) + (listing.at(-1)?.bytes.length ?? 1) - 1;
+  const instructionListing = listing.filter((line) => {
+    const { op } = splitSource(line.text);
+    return op && !["DB", "DW", "ORG", "END"].includes(op);
+  });
+  const codeRanges = instructionListing.reduce<[number, number][]>(
+    (ranges, line) => {
+      const start = line.address;
+      const end = line.address + line.bytes.length - 1;
+      const previous = ranges.at(-1);
+      if (previous && previous[1] + 1 === start) previous[1] = end;
+      else ranges.push([start, end]);
+      return ranges;
+    },
+    [],
+  );
   return (
     <article className="report-document font-serif">
       <div className="border-b-2 border-slate-900 pb-4">
@@ -1947,10 +2767,15 @@ function Report({
         <h2 className="border-l-4 border-cyan-600 pl-3 font-sans text-lg font-bold">
           3. Memory dumps
         </h2>
-        <h3 className="mt-4 font-sans text-sm font-semibold">
-          Range (Program Code):
-        </h3>
-        <DumpTable start={codeStart} end={codeEnd} />
+        {codeRanges.map(([s, e], index) => (
+          <div key={`code-${s}-${e}`} className="mt-4">
+            <h3 className="font-sans text-sm font-semibold">
+              Range (Program Code{codeRanges.length > 1 ? ` ${index + 1}` : ""}
+              ): {hex(s, 4)}H–{hex(e, 4)}H
+            </h3>
+            <DumpTable start={s} end={e} />
+          </div>
+        ))}
         {ranges.map(([s, e]) => (
           <div key={`${s}-${e}`} className="mt-5">
             <h3 className="font-sans text-sm font-semibold">
