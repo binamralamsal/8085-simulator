@@ -75,7 +75,9 @@ MVI A, 14H
 MVI B, 2FH
 ADD B
 STA 9000H
-HLT`,
+HLT
+
+REPORT 9000H, 01H`,
   },
   {
     id: "sub",
@@ -87,7 +89,9 @@ MVI A, 50H
 MVI B, 18H
 SUB B
 STA 9000H
-HLT`,
+HLT
+
+REPORT 9000H, 01H`,
   },
   {
     id: "sum-array",
@@ -105,7 +109,9 @@ JNZ LOOP
 STA 9010H
 HLT
 ORG 9000H
-DATA: DB 05H, 03H, 09H, 01H`,
+DATA: DB 05H, 03H, 09H, 01H
+
+REPORT 9010H, 01H`,
   },
   {
     id: "largest",
@@ -126,7 +132,9 @@ JNZ LOOP
 STA 9010H
 HLT
 ORG 9000H
-DB 23H, 7AH, 19H, 4CH`,
+DB 23H, 7AH, 19H, 4CH
+
+REPORT 9010H, 01H`,
   },
   {
     id: "smallest",
@@ -147,7 +155,9 @@ JNZ LOOP
 STA 9010H
 HLT
 ORG 9000H
-DB 23H, 7AH, 19H, 4CH`,
+DB 23H, 7AH, 19H, 4CH
+
+REPORT 9010H, 01H`,
   },
   {
     id: "copy-block",
@@ -166,7 +176,9 @@ DCR B
 JNZ LOOP
 HLT
 ORG 9000H
-DB 11H, 22H, 33H, 44H`,
+DB 11H, 22H, 33H, 44H
+
+REPORT 9010H, 04H`,
   },
   {
     id: "count-zero",
@@ -188,7 +200,9 @@ MOV A, C
 STA 9010H
 HLT
 ORG 9000H
-DB 00H, 14H, 00H, 27H, 00H`,
+DB 00H, 14H, 00H, 27H, 00H
+
+REPORT 9010H, 01H`,
   },
   {
     id: "even-odd",
@@ -215,7 +229,9 @@ MOV A, D
 STA 9011H
 HLT
 ORG 9000H
-DB 10H, 11H, 20H, 21H, 30H, 31H`,
+DB 10H, 11H, 20H, 21H, 30H, 31H
+
+REPORT 9010H, 02H`,
   },
   {
     id: "increment-array",
@@ -231,7 +247,9 @@ DCR B
 JNZ LOOP
 HLT
 ORG 9000H
-DB 10H, 20H, 30H, 40H, 50H`,
+DB 10H, 20H, 30H, 40H, 50H
+
+REPORT 9000H, 05H`,
   },
   {
     id: "sort-ascending",
@@ -258,7 +276,9 @@ DCR C
 JNZ PASS
 HLT
 ORG 9000H
-DB 42H, 11H, 37H, 05H`,
+DB 42H, 11H, 37H, 05H
+
+REPORT 9000H, 04H`,
   },
   {
     id: "factorial",
@@ -277,7 +297,9 @@ JNZ MUL
 DCR C
 JNZ OUTER
 STA 9000H
-HLT`,
+HLT
+
+REPORT 9000H, 01H`,
   },
   {
     id: "delay",
@@ -303,7 +325,9 @@ ORG 8000H
 IN 10H
 STA 9000H
 OUT 11H
-HLT`,
+HLT
+
+REPORT 9000H, 01H`,
   },
   {
     id: "stack",
@@ -319,7 +343,9 @@ HLT
 DOUBLE: PUSH PSW
 ADD A
 POP PSW
-RET`,
+RET
+
+REPORT 9000H, 01H`,
   },
   {
     id: "interrupt",
@@ -339,7 +365,9 @@ INR A
 STA 9000H
 POP PSW
 EI
-RET`,
+RET
+
+REPORT 9000H, 01H`,
   },
   {
     id: "memory-test",
@@ -354,13 +382,16 @@ MVI M, AAH
 DCX H
 MOV A, M
 STA 9010H
-HLT`,
+HLT
+
+REPORT 9010H, 01H`,
   },
 ] as const;
 
 function formatSampleCode(source: string) {
   const comments: Record<string, string> = {
     ORG: "Select the program/data memory address.",
+    REPORT: "Include a memory range in the lab report without writing memory.",
     LXI: "Load a 16-bit value into a register pair.",
     MVI: "Load an immediate 8-bit value.",
     MOV: "Transfer a byte between registers or memory.",
@@ -400,54 +431,77 @@ function formatSampleCode(source: string) {
   };
 
   let insideLabelBlock = false;
+  let emittedMeaningful = false;
+  let previousOp = "";
+  let previousWasBlank = false;
 
-  return source
-    .split("\n")
-    .map((raw) => {
-      const trimmed = raw.trim();
-      if (!trimmed || trimmed.startsWith(";") || trimmed.startsWith("```"))
-        return raw;
+  const output: string[] = [];
+  for (const raw of source.split("\n")) {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith(";") || trimmed.startsWith("```")) {
+      output.push(raw);
+      previousWasBlank = !trimmed;
+      continue;
+    }
 
-      const match = trimmed.match(/^([A-Za-z_.$][\w.$]*:)?\s*([A-Za-z]+)/);
-      if (!match) return raw;
+    const match = trimmed.match(/^([A-Za-z_.$][\w.$]*:)?\s*([A-Za-z]+)/);
+    if (!match) {
+      output.push(raw);
+      previousWasBlank = false;
+      continue;
+    }
 
-      const label = match[1] ?? "";
-      const op = match[2].toUpperCase();
-      const rest = trimmed.slice(label.length).trim();
-      const commentIndex = rest.indexOf(";");
-      const codePart =
-        commentIndex >= 0 ? rest.slice(0, commentIndex).trimEnd() : rest;
-      const comment =
-        commentIndex >= 0
-          ? rest.slice(commentIndex + 1).trim()
-          : (comments[op] ?? "");
+    const label = match[1] ?? "";
+    const op = match[2].toUpperCase();
+    const rest = trimmed.slice(label.length).trim();
+    const commentIndex = rest.indexOf(";");
+    const codePart =
+      commentIndex >= 0 ? rest.slice(0, commentIndex).trimEnd() : rest;
+    const comment =
+      commentIndex >= 0
+        ? rest.slice(commentIndex + 1).trim()
+        : (comments[op] ?? "");
 
-      if (op === "ORG") insideLabelBlock = false;
-      else if (label) insideLabelBlock = true;
+    // Separate logical program/data segments with a real blank line.
+    // The first label after setup starts a new labelled block; later labels
+    // such as NEXT/KEEP remain attached to that same block.
+    const startsLabelBlock =
+      Boolean(label) &&
+      !insideLabelBlock &&
+      emittedMeaningful &&
+      previousOp !== "ORG";
+    const startsNewOrg = op === "ORG" && emittedMeaningful;
+    const startsReportBlock =
+      op === "REPORT" && emittedMeaningful && previousOp !== "ORG";
+    if (
+      (startsLabelBlock || startsNewOrg || startsReportBlock) &&
+      !previousWasBlank
+    )
+      output.push("");
 
-      let formatted: string;
+    if (op === "ORG" || op === "REPORT") insideLabelBlock = false;
+    else if (label) insideLabelBlock = true;
 
-      if (op === "ORG") {
-        // ORG directives always start at column 1.
-        formatted = codePart;
-      } else if (label) {
-        // Labels occupy the first 8 columns; their instruction starts after it.
-        formatted = `${label.padEnd(8)}${codePart}`;
-      } else if (op === "DB" || op === "DW") {
-        // Data is visually separated from directives.
-        formatted = `        ${codePart}`;
-      } else if (insideLabelBlock) {
-        // Instructions belonging to a labelled block line up under the opcode.
-        formatted = `        ${codePart}`;
-      } else {
-        // Top-level instructions start at column 1.
-        formatted = codePart;
-      }
+    let formatted: string;
+    if (op === "ORG") {
+      formatted = codePart;
+    } else if (label) {
+      formatted = `${label.padEnd(8)}${codePart}`;
+    } else if (op === "DB" || op === "DW") {
+      formatted = `        ${codePart}`;
+    } else if (insideLabelBlock) {
+      formatted = `        ${codePart}`;
+    } else {
+      formatted = codePart;
+    }
 
-      if (!comment) return formatted;
-      return `${formatted.padEnd(34)}; ${comment}`;
-    })
-    .join("\n");
+    output.push(comment ? `${formatted.padEnd(34)}; ${comment}` : formatted);
+    emittedMeaningful = true;
+    previousOp = op;
+    previousWasBlank = false;
+  }
+
+  return output.join("\n");
 }
 
 const samplePrograms = rawSamplePrograms.map((sample) => ({
@@ -577,6 +631,7 @@ const parse = (v?: string) =>
   typeof v === "string" ? parseInt(v.replace(/H$/i, ""), 16) : Number.NaN;
 const labels = new Set([
   "ORG",
+  "REPORT",
   "DB",
   "DW",
   "END",
@@ -992,6 +1047,32 @@ function instructionBytes(
   if (op === "LDAX") return [pair(args[0]) === 0 ? 10 : 26];
   throw Error(`Unsupported instruction '${op}'`);
 }
+
+function parseReportRange(args: string[]): [number, number] {
+  const start = parse(args[0]);
+  const count = parse(args[1]);
+  if (Number.isNaN(start) || Number.isNaN(count))
+    throw Error("REPORT requires an address and byte count");
+  if (start < 0 || start > 0xffff)
+    throw Error("REPORT address must be a 16-bit hexadecimal address");
+  if (count <= 0 || count > 0x10000 || start + count > 0x10000)
+    throw Error("REPORT byte count must be positive and fit in 64 KB");
+  return [start & 0xffff, (start + count - 1) & 0xffff];
+}
+
+function mergeRanges(ranges: [number, number][]) {
+  return ranges
+    .filter(([start, end]) => start <= end)
+    .sort((a, b) => a[0] - b[0])
+    .reduce<[number, number][]>((merged, range) => {
+      const previous = merged.at(-1);
+      if (previous && range[0] <= previous[1] + 1)
+        previous[1] = Math.max(previous[1], range[1]);
+      else merged.push([...range]);
+      return merged;
+    }, []);
+}
+
 function assembleSource(source: string, start: number) {
   const symbols = new Map<string, number>();
   let address = start;
@@ -1004,6 +1085,10 @@ function assembleSource(source: string, start: number) {
       const target = parse(args[0]);
       // Keep the live parser stable while an ORG operand is incomplete.
       if (!Number.isNaN(target)) address = target;
+      continue;
+    }
+    if (op === "REPORT") {
+      // REPORT is a simulator/reporting directive: it consumes no program memory.
       continue;
     }
     if (op === "DB") address += args.length;
@@ -1022,6 +1107,7 @@ function assembleSource(source: string, start: number) {
   const listing: Listing[] = [];
   const errors: string[] = [];
   const dataRanges: [number, number][] = [];
+  const reportRanges: [number, number][] = [];
   lines.forEach((raw, index) => {
     const { op, args } = splitSource(raw);
     if (!op) return;
@@ -1034,6 +1120,10 @@ function assembleSource(source: string, start: number) {
         return;
       }
       if (op === "END") return;
+      if (op === "REPORT") {
+        reportRanges.push(parseReportRange(args));
+        return;
+      }
       let bytes: number[];
       if (op === "DB")
         bytes = args.flatMap((x) =>
@@ -1060,16 +1150,12 @@ function assembleSource(source: string, start: number) {
       errors.push(`Line ${index + 1}: ${(e as Error).message}`);
     }
   });
-  const mergedDataRanges = dataRanges.reduce<[number, number][]>(
-    (merged, range) => {
-      const previous = merged.at(-1);
-      if (previous && previous[1] + 1 === range[0]) previous[1] = range[1];
-      else merged.push(range);
-      return merged;
-    },
-    [],
-  );
-  return { listing, errors, dataRanges: mergedDataRanges };
+  return {
+    listing,
+    errors,
+    dataRanges: mergeRanges(dataRanges),
+    reportRanges: mergeRanges(reportRanges),
+  };
 }
 const colorCache = new Map<string, string>();
 let colorCtx: CanvasRenderingContext2D | null = null;
@@ -1520,73 +1606,39 @@ function TimingWave({
   instruction: string;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
-  // One fixed column per T-state. Every machine cycle owns exactly cycle.t columns.
-  const T = 78;
-  const LABEL = 182;
-  const TOP = 86;
-  const ROW = 58;
-  const rows = [
-    "CLK",
-    "A15-A8",
-    "AD7-AD0",
-    "ALE",
-    "IO/M",
-    "S1",
-    "S0",
-    "RD",
-    "WR",
+  const T = 92;
+  const LABEL = 90;
+  const HEADER_Y = 60;
+  const CYCLE_H = 32;
+  const STATE_H = 32;
+  const BODY_Y = HEADER_Y + CYCLE_H + STATE_H;
+  const ROWS: { name: string; h: number }[] = [
+    { name: "CLK", h: 76 },
+    { name: "A15-A8", h: 68 },
+    { name: "AD7-AD0", h: 76 },
+    { name: "ALE", h: 68 },
+    { name: "IO/M", h: 60 },
+    { name: "S1", h: 60 },
+    { name: "S0", h: 60 },
+    { name: "RD", h: 68 },
+    { name: "WR", h: 68 },
   ];
-  const totalT = cycles.reduce((sum, c) => sum + c.t, 0);
-  const width = LABEL + totalT * T + 24;
-  const height = TOP + rows.length * ROW + 74;
+  const totalT = cycles.reduce((sum, cycle) => sum + cycle.t, 0);
+  const width = LABEL + totalT * T + 18;
+  const height = BODY_Y + ROWS.reduce((sum, row) => sum + row.h, 0) + 44;
 
   const cycleInfo = (name: DiagramCycle["name"]) => {
     switch (name) {
       case "OF":
-        return {
-          title: "Opcode Fetch",
-          code: "OF",
-          ioM: "0",
-          s1: "1",
-          s0: "1",
-          control: "Memory / opcode fetch",
-        };
+        return { title: "Opcode Fetch", ioM: "0", s1: "1", s0: "1" };
       case "MR":
-        return {
-          title: "Memory Read",
-          code: "MR",
-          ioM: "0",
-          s1: "1",
-          s0: "0",
-          control: "Memory read",
-        };
+        return { title: "Memory Read", ioM: "0", s1: "1", s0: "0" };
       case "MW":
-        return {
-          title: "Memory Write",
-          code: "MW",
-          ioM: "0",
-          s1: "0",
-          s0: "1",
-          control: "Memory write",
-        };
+        return { title: "Memory Write", ioM: "0", s1: "0", s0: "1" };
       case "IOR":
-        return {
-          title: "I/O Read",
-          code: "IOR",
-          ioM: "1",
-          s1: "1",
-          s0: "0",
-          control: "I/O read",
-        };
+        return { title: "I/O Read", ioM: "1", s1: "1", s0: "0" };
       case "IOW":
-        return {
-          title: "I/O Write",
-          code: "IOW",
-          ioM: "1",
-          s1: "0",
-          s0: "1",
-          control: "I/O write",
-        };
+        return { title: "I/O Write", ioM: "1", s1: "0", s0: "1" };
     }
   };
 
@@ -1599,138 +1651,270 @@ function TimingWave({
     });
   })();
 
-  const stateFor = (cycle: DiagramCycle, t: number, row: string) => {
+  const rowY = new Map<string, number>();
+  let currentY = BODY_Y;
+  for (const row of ROWS) {
+    rowY.set(row.name, currentY);
+    currentY += row.h;
+  }
+
+  const signalColor = (row: string) =>
+    row === "CLK"
+      ? "#34d399"
+      : row === "ALE"
+        ? "#60a5fa"
+        : row === "RD" || row === "WR"
+          ? "#f87171"
+          : "#d084ff";
+
+  const signalLabel = (
+    name: string,
+    x: number,
+    y: number,
+    className?: string,
+  ) => {
+    const common = {
+      x,
+      y,
+      fill: "#a8b5c7",
+      fontSize: 10,
+      fontWeight: "700",
+      textAnchor: "end" as const,
+      fontFamily: "monospace",
+    };
+    if (name === "RD" || name === "WR") {
+      return (
+        <g>
+          <text {...common} className={className}>
+            {name}
+          </text>
+          <line
+            x1={x - (name === "RD" ? 16 : 17)}
+            y1={y - 12}
+            x2={x - 1}
+            y2={y - 12}
+            stroke="#a8b5c7"
+            strokeWidth="1.2"
+          />
+        </g>
+      );
+    }
+    if (name === "IO/M") {
+      // Keep the active-low bar directly over the M glyph. A separate SVG
+      // line is more legible than a combining Unicode overline at small sizes.
+      const mWidth = 8;
+      return (
+        <g>
+          <text
+            x={x - mWidth}
+            y={y}
+            fill="#a8b5c7"
+            fontSize="10"
+            fontWeight="700"
+            textAnchor="end"
+            fontFamily="monospace"
+          >
+            IO/
+          </text>
+          <text
+            x={x}
+            y={y}
+            fill="#a8b5c7"
+            fontSize="10"
+            fontWeight="700"
+            textAnchor="end"
+            fontFamily="monospace"
+          >
+            M
+          </text>
+          <line
+            x1={x - mWidth - 1}
+            y1={y - 10}
+            x2={x - 1}
+            y2={y - 10}
+            stroke="#a8b5c7"
+            strokeWidth="1.1"
+            strokeLinecap="round"
+          />
+        </g>
+      );
+    }
+    return (
+      <text {...common} className={className}>
+        {name}
+      </text>
+    );
+  };
+
+  const signalState = (cycle: DiagramCycle, t: number, row: string) => {
     const info = cycleInfo(cycle.name);
-    if (row === "CLK") return t % 2 === 1 ? 1 : 0;
-    if (row === "ALE") return t === 1 ? 1 : 0;
     if (row === "IO/M") return Number(info.ioM);
     if (row === "S1") return Number(info.s1);
     if (row === "S0") return Number(info.s0);
+    if (row === "ALE") return t === 1 ? 1 : 0;
     if (row === "RD")
-      return cycle.name === "MR" || cycle.name === "IOR" ? (t >= 2 ? 0 : 1) : 1;
+      return cycle.name === "OF" || cycle.name === "MR" || cycle.name === "IOR"
+        ? t >= 2 && t <= 3
+          ? 0
+          : 1
+        : 1;
     if (row === "WR")
-      return cycle.name === "MW" || cycle.name === "IOW" ? (t >= 2 ? 0 : 1) : 1;
+      return cycle.name === "MW" || cycle.name === "IOW"
+        ? t >= 2 && t <= 3
+          ? 0
+          : 1
+        : 1;
     return 1;
   };
 
-  const signalColor = (row: string) => {
-    if (row === "CLK") return "#34d399";
-    if (row === "ALE") return "#60a5fa";
-    if (row === "RD" || row === "WR") return "#f87171";
-    return "#d084ff";
+  const drawClock = () => {
+    const y = rowY.get("CLK")!;
+    const h = ROWS.find((r) => r.name === "CLK")!.h;
+    const high = y + h / 2 - 14;
+    const low = y + h / 2 + 14;
+    let d = `M ${LABEL} ${low}`;
+    let x = LABEL;
+    for (let i = 0; i < totalT; i++) {
+      const rise = x + T * 0.16;
+      const fall = x + T * 0.62;
+      const end = x + T;
+      d += ` L ${rise} ${low} L ${rise + 5} ${high} L ${fall} ${high} L ${fall + 5} ${low} L ${end} ${low}`;
+      x = end;
+    }
+    return d;
   };
 
-  const signalPath = (row: string) => {
-    const index = rows.indexOf(row);
-    const center = TOP + index * ROW + ROW / 2 + 4;
-    const high = center - 13;
-    const low = center + 13;
+  const drawSignal = (row: string) => {
+    const y = rowY.get(row)!;
+    const h = ROWS.find((r) => r.name === row)!.h;
+    const high = y + h / 2 - 11;
+    const low = y + h / 2 + 11;
+    let d = `M ${LABEL} ${low}`;
     let x = LABEL;
     let previous = 0;
-    const parts = [`M ${x} ${low}`];
-
     for (const cycle of cycles) {
       for (let t = 1; t <= cycle.t; t++) {
-        const value = stateFor(cycle, t, row);
-        const nextX = x + T;
+        const value = signalState(cycle, t, row);
         const target = value ? high : low;
-        const prevY = previous ? high : low;
         if (value !== previous) {
-          // Small sloped transition like the textbook reference, not a large polygon notch.
-          parts.push(`L ${x + 5} ${prevY}`);
-          parts.push(`L ${x + 12} ${target}`);
+          d += ` L ${x + 5} ${previous ? high : low} L ${x + 10} ${target}`;
         }
-        parts.push(`L ${nextX} ${target}`);
+        d += ` L ${x + T} ${target}`;
+        x += T;
         previous = value;
-        x = nextX;
       }
     }
-    return parts.join(" ");
+    return d;
+  };
+
+  const busText = (
+    cycle: DiagramCycle,
+    row: "A15-A8" | "AD7-AD0",
+    startT: number,
+    count: number,
+  ) => {
+    const address =
+      cycle.address && /^[0-9A-F]{4}H$/i.test(cycle.address)
+        ? cycle.address
+        : "";
+    const hi = address
+      ? `${address.slice(0, 2).toUpperCase()}H`
+      : cycle.address || "—";
+    const lo = address ? `${address.slice(2, 4).toUpperCase()}H` : "—";
+    if (row === "A15-A8") {
+      if (startT === 1) return `${hi} · High-order address`;
+      if (cycle.name === "OF") return "Unspecified / decode";
+      return cycle.address || "Address";
+    }
+    if (startT === 1) return `${lo} · Low-order address`;
+    if (cycle.name === "OF" && startT === 2)
+      return cycle.data ? `${cycle.data}H · Opcode Read` : "Opcode Read";
+    if (cycle.name === "OF" && startT >= 4) return "Decodes opcode";
+    if (cycle.name === "MR" || cycle.name === "IOR")
+      return cycle.data ? `${cycle.data}H · Data Read` : "Data Read";
+    if (cycle.name === "MW" || cycle.name === "IOW")
+      return cycle.data ? `${cycle.data}H · Data Write` : "Data Write";
+    return "Internal operation";
+  };
+
+  const busSegments = (cycle: DiagramCycle, row: "A15-A8" | "AD7-AD0") => {
+    const segments: {
+      start: number;
+      count: number;
+      label: string;
+      dashed?: boolean;
+    }[] = [];
+    if (row === "A15-A8") {
+      const addressCount =
+        cycle.name === "OF" && cycle.t > 3 ? 3 : Math.min(3, cycle.t);
+      if (addressCount > 0)
+        segments.push({
+          start: 1,
+          count: addressCount,
+          label: busText(cycle, row, 1, addressCount),
+        });
+      if (cycle.t > addressCount)
+        segments.push({
+          start: addressCount + 1,
+          count: cycle.t - addressCount,
+          label: busText(cycle, row, addressCount + 1, cycle.t - addressCount),
+        });
+      return segments;
+    }
+    if (cycle.t >= 1)
+      segments.push({ start: 1, count: 1, label: busText(cycle, row, 1, 1) });
+    if (cycle.t >= 3)
+      segments.push({ start: 2, count: 2, label: busText(cycle, row, 2, 2) });
+    if (cycle.t > 3)
+      segments.push({
+        start: 4,
+        count: cycle.t - 3,
+        label: busText(cycle, row, 4, cycle.t - 3),
+        dashed: cycle.name === "OF",
+      });
+    return segments;
+  };
+
+  const busPath = (x: number, y: number, w: number, h: number) => {
+    const c = Math.min(5, Math.max(3, w * 0.035));
+    return `M ${x + c} ${y} H ${x + w - c} L ${x + w} ${y + h / 2} L ${x + w - c} ${y + h} H ${x + c} L ${x} ${y + h / 2} Z`;
   };
 
   const busLabel = (
-    cycle: DiagramCycle,
-    row: "A15-A8" | "AD7-AD0",
-    localT: number,
+    label: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
   ) => {
-    const of = cycle.name === "OF";
-    if (row === "A15-A8") {
-      if (of && localT > 3) return "Decode opcode / next address";
-      if (cycle.address && /^[0-9A-F]{4}H$/i.test(cycle.address))
-        return `${cycle.address.slice(0, 2).toUpperCase()}H · High-order address`;
-      if (cycle.address) return cycle.address;
-      if (cycle.name === "MW") return cycle.address || "Stack address";
-      return "High-order memory address";
+    const font = w < 100 ? 7.2 : w < 150 ? 7.8 : 8.8;
+    const words = label.split(/\s+/);
+    const maxChars = Math.max(8, Math.floor(w / (font * 0.62)));
+    const lines: string[] = [];
+    let current = "";
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (current && candidate.length > maxChars) {
+        lines.push(current);
+        current = word;
+      } else current = candidate;
     }
-
-    if (localT === 1) {
-      if (cycle.address && /^[0-9A-F]{4}H$/i.test(cycle.address))
-        return `${cycle.address.slice(2, 4).toUpperCase()}H · Low-order address`;
-      return "Low-order address";
-    }
-    if (of && localT <= 3)
-      return cycle.data ? `${cycle.data}H · Opcode` : "Opcode";
-    if (of) return "Decode opcode / next address";
-    if (cycle.data && localT >= 2) return `${cycle.data}H · Data`;
-    if (cycle.name === "MR") return "Data from memory";
-    if (cycle.name === "MW") return "Data to memory";
-    if (cycle.name === "IOR") return "Data from I/O";
-    if (cycle.name === "IOW") return "Data to I/O";
-    return "";
-  };
-
-  const busGroups = (cycle: DiagramCycle, row: "A15-A8" | "AD7-AD0") => {
-    const values = Array.from({ length: cycle.t }, (_, i) =>
-      busLabel(cycle, row, i + 1),
-    );
-    const groups: { value: string; start: number; count: number }[] = [];
-    values.forEach((value, i) => {
-      const last = groups[groups.length - 1];
-      if (last && last.value === value) last.count += 1;
-      else groups.push({ value, start: i, count: 1 });
-    });
-    return groups;
-  };
-
-  const busPath = (x: number, y: number, w: number) => {
-    // Only a subtle 5px chamfer, matching the reference's bus shapes without giant slants.
-    const c = Math.min(5, Math.max(2, w / 12));
-    return `M ${x + c} ${y} H ${x + w - c} L ${x + w} ${y + 12} L ${x + w - c} ${y + 24} H ${x + c} L ${x} ${y + 12} Z`;
-  };
-
-  const drawBusText = (label: string, x: number, y: number, w: number) => {
-    const compact = w < 92;
-    const parts = label.split(" · ");
-    if (compact && parts.length > 1) {
-      return (
-        <text
-          x={x + w / 2}
-          y={y + 10}
-          fill="#f8fafc"
-          fontSize="7.5"
-          textAnchor="middle"
-          fontFamily="monospace"
-        >
-          <tspan x={x + w / 2} dy="0">
-            {parts[0]}
-          </tspan>
-          <tspan x={x + w / 2} dy="9">
-            {parts.slice(1).join(" · ")}
-          </tspan>
-        </text>
-      );
-    }
-    const fontSize = label.length > 27 ? 7.2 : label.length > 20 ? 8 : 9;
+    if (current) lines.push(current);
+    const visible = lines.slice(0, 2);
     return (
       <text
         x={x + w / 2}
-        y={y + 15}
+        y={y + h / 2 - (visible.length - 1) * 5}
         fill="#f8fafc"
-        fontSize={fontSize}
+        fontSize={font}
         textAnchor="middle"
         fontFamily="monospace"
       >
-        {label}
+        {visible.map((line, index) => (
+          <tspan key={index} x={x + w / 2} dy={index === 0 ? 0 : 10}>
+            {line}
+          </tspan>
+        ))}
       </text>
     );
   };
@@ -1776,15 +1960,16 @@ function TimingWave({
     }
   };
 
+  const totalBodyHeight = ROWS.reduce((sum, row) => sum + row.h, 0);
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div className="text-[11px] text-slate-500">
-          Each machine cycle is divided into its own T1, T2, T3… states.
+          Textbook-style 8085 timing: one column per T-state, with bus
+          transitions and active-low control windows.
         </div>
         <Button size="sm" variant="outline" onClick={downloadImage}>
-          <Download size={14} />
-          Download PNG
+          <Download size={14} /> Download PNG
         </Button>
       </div>
       <div className="overflow-x-auto rounded-xl border border-slate-700/80 bg-[#07101d] p-2 shadow-inner">
@@ -1799,7 +1984,7 @@ function TimingWave({
         >
           <rect width={width} height={height} fill="#07101d" />
           <text
-            x={16}
+            x={18}
             y={24}
             fill="#94a3b8"
             fontSize="12"
@@ -1809,32 +1994,31 @@ function TimingWave({
             8085 TIMING DIAGRAM · {instruction.toUpperCase()}
           </text>
           <text
-            x={16}
-            y={43}
+            x={18}
+            y={42}
             fill="#64748b"
             fontSize="9"
             fontFamily="monospace"
           >
-            Machine cycles are instruction-specific · T-state grid is one column
-            per clock state
+            Machine cycles are instruction-specific · T1, T2, T3… are real
+            clock-state columns
           </text>
 
-          {/* Machine-cycle header */}
           {cycleStarts.map(({ cycle, start, width: cycleWidth }) => {
             const info = cycleInfo(cycle.name);
             return (
               <g key={`header-${start}`}>
                 <rect
                   x={start}
-                  y={TOP - 24}
+                  y={HEADER_Y}
                   width={cycleWidth}
-                  height={24}
+                  height={CYCLE_H}
                   fill="#0b1727"
-                  stroke="#41536a"
+                  stroke="#52657d"
                 />
                 <text
                   x={start + cycleWidth / 2}
-                  y={TOP - 9}
+                  y={HEADER_Y + 21}
                   fill="#67e8f9"
                   fontSize="10"
                   fontWeight="700"
@@ -1847,48 +2031,54 @@ function TimingWave({
             );
           })}
 
-          {/* T-state row and exact T-state boundaries */}
-          <rect x={0} y={TOP} width={width} height={24} fill="#091523" />
+          <rect
+            x={LABEL}
+            y={HEADER_Y + CYCLE_H}
+            width={totalT * T}
+            height={STATE_H}
+            fill="#091523"
+            stroke="#334155"
+          />
           <text
-            x={LABEL - 16}
-            y={TOP + 16}
-            fill="#94a3b8"
+            x={LABEL - 12}
+            y={HEADER_Y + CYCLE_H + 21}
+            fill="#a8b5c7"
             fontSize="10"
+            fontWeight="700"
             textAnchor="end"
             fontFamily="monospace"
           >
             T-STATE
           </text>
           {Array.from({ length: totalT }, (_, i) => {
-            const x = LABEL + i * T;
+            let local = i;
+            let state = 1;
+            for (const cycle of cycles) {
+              if (local < cycle.t) {
+                state = local + 1;
+                break;
+              }
+              local -= cycle.t;
+            }
             return (
-              <g key={`t-${i}`}>
-                <rect
-                  x={x}
-                  y={TOP}
-                  width={T}
-                  height={24}
-                  fill="none"
-                  stroke="#334155"
+              <g key={`state-${i}`}>
+                <line
+                  x1={LABEL + i * T}
+                  y1={HEADER_Y + CYCLE_H}
+                  x2={LABEL + i * T}
+                  y2={BODY_Y + totalBodyHeight}
+                  stroke="#34465c"
                 />
                 <text
-                  x={x + T / 2}
-                  y={TOP + 16}
+                  x={LABEL + i * T + T / 2}
+                  y={HEADER_Y + CYCLE_H + 21}
                   fill="#e2e8f0"
                   fontSize="9"
                   fontWeight="700"
                   textAnchor="middle"
                   fontFamily="monospace"
                 >
-                  T
-                  {(() => {
-                    let remaining = i;
-                    for (const cycle of cycles) {
-                      if (remaining < cycle.t) return remaining + 1;
-                      remaining -= cycle.t;
-                    }
-                    return 1;
-                  })()}
+                  T{state}
                 </text>
               </g>
             );
@@ -1896,179 +2086,211 @@ function TimingWave({
 
           {cycleStarts.map(({ start }) => (
             <line
-              key={`cycle-boundary-${start}`}
+              key={`boundary-${start}`}
               x1={start}
-              y1={TOP - 24}
+              y1={HEADER_Y}
               x2={start}
-              y2={height - 34}
-              stroke="#64748b"
-              strokeWidth="1.5"
+              y2={BODY_Y + totalBodyHeight}
+              stroke="#71839a"
+              strokeWidth="1.6"
             />
           ))}
           <line
             x1={LABEL + totalT * T}
-            y1={TOP - 24}
+            y1={HEADER_Y}
             x2={LABEL + totalT * T}
-            y2={height - 34}
-            stroke="#64748b"
-            strokeWidth="1.5"
+            y2={BODY_Y + totalBodyHeight}
+            stroke="#71839a"
+            strokeWidth="1.6"
           />
 
-          {rows.map((row, rowIndex) => {
-            const y = TOP + 24 + rowIndex * ROW;
-            const isBus = row === "A15-A8" || row === "AD7-AD0";
+          {ROWS.map(({ name, h }, rowIndex) => {
+            const y = rowY.get(name)!;
+            const center = y + h / 2;
+            const isBus = name === "A15-A8" || name === "AD7-AD0";
             return (
-              <g key={row}>
+              <g key={name}>
                 <rect
                   x={0}
                   y={y}
                   width={width}
-                  height={ROW}
+                  height={h}
                   fill={rowIndex % 2 ? "#081421" : "#07101d"}
                 />
                 <line
                   x1={0}
-                  y1={y + ROW}
+                  y1={y + h}
                   x2={width}
-                  y2={y + ROW}
+                  y2={y + h}
                   stroke="#26364a"
                 />
-                <text
-                  x={LABEL - 16}
-                  y={y + 32}
-                  fill="#a8b5c7"
-                  fontSize="10"
-                  fontWeight="700"
-                  textAnchor="end"
-                  fontFamily="monospace"
-                >
-                  {row}
-                </text>
-                {Array.from({ length: totalT + 1 }, (_, i) => (
-                  <line
-                    key={`grid-${row}-${i}`}
-                    x1={LABEL + i * T}
-                    y1={y}
-                    x2={LABEL + i * T}
-                    y2={y + ROW}
-                    stroke={
-                      cycleStarts.some(({ start }) => start === LABEL + i * T)
-                        ? "#64748b"
-                        : "#26384d"
-                    }
-                    strokeWidth={
-                      cycleStarts.some(({ start }) => start === LABEL + i * T)
-                        ? 1.5
-                        : 1
-                    }
-                  />
-                ))}
+                {signalLabel(name, LABEL - 12, center + 4)}
 
-                {isBus ? (
-                  cycleStarts.map(({ cycle, start }) => (
-                    <g key={`${row}-${start}`}>
-                      {busGroups(cycle, row).map((group, gi) => {
-                        const x = start + group.start * T + 2;
-                        const w = group.count * T - 4;
-                        const by = y + 17;
-                        const label = group.value;
-                        return (
-                          <g key={gi}>
-                            <path
-                              d={busPath(x, by, w)}
-                              fill="#0c1c2e"
-                              stroke="#55728f"
-                              strokeWidth="1"
-                            />
-                            {drawBusText(label, x, by, w)}
-                          </g>
-                        );
-                      })}
-                    </g>
-                  ))
-                ) : (
+                {name !== "CLK" &&
+                  name !== "ALE" &&
+                  !isBus &&
+                  Array.from({ length: totalT + 1 }, (_, i) => (
+                    <line
+                      key={`grid-${name}-${i}`}
+                      x1={LABEL + i * T}
+                      y1={y}
+                      x2={LABEL + i * T}
+                      y2={y + h}
+                      stroke="#23364a"
+                    />
+                  ))}
+
+                {name === "CLK" && (
                   <path
-                    d={signalPath(row)}
+                    d={drawClock()}
                     fill="none"
-                    stroke={signalColor(row)}
+                    stroke={signalColor(name)}
+                    strokeWidth="2.6"
+                    strokeLinecap="square"
+                    strokeLinejoin="miter"
+                  />
+                )}
+                {name !== "CLK" && !isBus && (
+                  <path
+                    d={drawSignal(name)}
+                    fill="none"
+                    stroke={signalColor(name)}
                     strokeWidth="2.4"
                     strokeLinecap="square"
                     strokeLinejoin="miter"
                   />
                 )}
 
-                {!isBus &&
-                  row !== "CLK" &&
-                  row !== "ALE" &&
-                  cycleStarts.map(({ cycle, start, width: cycleWidth }) => {
+                {isBus &&
+                  cycleStarts.map(({ cycle, start }) => {
+                    const busY = y + 21;
+                    const baseline = busY + 14;
+                    return (
+                      <g key={`${name}-${start}`}>
+                        <line
+                          x1={start + 2}
+                          y1={baseline}
+                          x2={start + cycle.t * T - 2}
+                          y2={baseline}
+                          stroke="#8398ae"
+                          strokeDasharray="3 4"
+                          strokeWidth="1"
+                          opacity="0.85"
+                        />
+                        {busSegments(cycle, name).map((segment, index) => {
+                          const x = start + (segment.start - 1) * T + 5;
+                          const w = segment.count * T - 10;
+                          const isDecode =
+                            name === "AD7-AD0" &&
+                            segment.label.toLowerCase().includes("decode");
+                          return (
+                            <g key={index}>
+                              {!segment.dashed && !isDecode && (
+                                <path
+                                  d={busPath(x, busY, w, 28)}
+                                  fill="#0b1b2d"
+                                  stroke="#5d7894"
+                                  strokeWidth="1.1"
+                                />
+                              )}
+                              {segment.dashed || isDecode
+                                ? busLabel(segment.label, x, busY - 2, w, 30)
+                                : busLabel(segment.label, x, busY, w, 28)}
+                            </g>
+                          );
+                        })}
+                      </g>
+                    );
+                  })}
+
+                {name === "ALE" &&
+                  cycleStarts.map(({ cycle, start }) => {
+                    const high = y + h / 2 - 11;
+                    const low = y + h / 2 + 11;
+                    return (
+                      <g key={`ale-text-${start}`}>
+                        <text
+                          x={start + T / 2}
+                          y={high + 17}
+                          fill="#93c5fd"
+                          fontSize="8"
+                          textAnchor="middle"
+                          fontFamily="monospace"
+                        >
+                          ALE = 1
+                        </text>
+                        {cycle.t > 1 && (
+                          <text
+                            x={start + T * (1 + (cycle.t - 1) / 2)}
+                            y={low - 8}
+                            fill="#93c5fd"
+                            fontSize="8"
+                            textAnchor="middle"
+                            fontFamily="monospace"
+                          >
+                            ALE = 0
+                          </text>
+                        )}
+                      </g>
+                    );
+                  })}
+
+                {name !== "CLK" &&
+                  name !== "ALE" &&
+                  !isBus &&
+                  cycleStarts.map(({ cycle, start }) => {
                     const info = cycleInfo(cycle.name);
                     const value =
-                      row === "IO/M"
+                      name === "IO/M"
                         ? info.ioM
-                        : row === "S1"
+                        : name === "S1"
                           ? info.s1
-                          : row === "S0"
+                          : name === "S0"
                             ? info.s0
-                            : row === "RD"
-                              ? cycle.name === "MR" || cycle.name === "IOR"
+                            : name === "RD"
+                              ? cycle.name === "OF" ||
+                                cycle.name === "MR" ||
+                                cycle.name === "IOR"
                                 ? "0"
                                 : "1"
                               : cycle.name === "MW" || cycle.name === "IOW"
                                 ? "0"
                                 : "1";
+                    const active =
+                      value === "0" && (name === "RD" || name === "WR");
                     return (
                       <text
-                        key={`${row}-${start}`}
-                        x={start + cycleWidth / 2}
-                        y={y + 14}
-                        fill={
-                          value === "0" && (row === "RD" || row === "WR")
-                            ? "#fca5a5"
-                            : "#aab7c8"
-                        }
+                        key={`${name}-${start}`}
+                        x={start + (cycle.t * T) / 2}
+                        y={rowY.get(name)! + (active ? h / 2 + 22 : h / 2 - 17)}
+                        fill={active ? "#fca5a5" : "#aab7c8"}
                         fontSize="8"
                         textAnchor="middle"
                         fontFamily="monospace"
                       >
-                        {row} = {value}
+                        {name} = {value}
                       </text>
                     );
                   })}
-
-                {row === "ALE" &&
-                  cycleStarts.map(({ start, width: cycleWidth }) => (
-                    <text
-                      key={`ale-${start}`}
-                      x={start + cycleWidth / 2}
-                      y={y + 14}
-                      fill="#93c5fd"
-                      fontSize="8"
-                      textAnchor="middle"
-                      fontFamily="monospace"
-                    >
-                      ALE = 1 in T1 · 0 after
-                    </text>
-                  ))}
               </g>
             );
           })}
 
-          {/* Bottom status legend, kept inside the image so it never overflows waveform rows. */}
           <line
             x1={LABEL}
-            y1={height - 32}
-            x2={width - 12}
-            y2={height - 32}
+            y1={height - 30}
+            x2={width - 8}
+            y2={height - 30}
             stroke="#334155"
           />
           <text
             x={LABEL}
-            y={height - 18}
+            y={height - 15}
             fill="#64748b"
             fontSize="8"
             fontFamily="monospace"
           >
-            IO/M: 0 = memory, 1 = I/O · S1/S0 identify machine cycle · RD/WR are
+            IO/M̅: 0 = memory · 1 = I/O · S1/S0 = cycle status · RD̅/WR̅ are
             active-low
           </text>
         </svg>
@@ -2556,10 +2778,18 @@ function App() {
     rerender();
   }
   const mem = Array.from({ length: 256 }, (_, i) => page * 256 + i);
-  // No hidden default range: only source DB/DW blocks plus what the user adds.
+  // All data/report memory selections belong to the same memory-dump view.
+  // REPORT does not allocate memory; it simply asks the report to include the
+  // existing runtime bytes in this same Data Memory dump. Adjacent/overlapping
+  // ranges are merged so a REPORT next to a DB/DW range appears in one table.
   const reportRanges = useMemo(
-    () => [...assembled.dataRanges, ...ranges],
-    [assembled.dataRanges, ranges],
+    () =>
+      mergeRanges([
+        ...assembled.dataRanges,
+        ...assembled.reportRanges,
+        ...ranges,
+      ]),
+    [assembled.dataRanges, assembled.reportRanges, ranges],
   );
   const reportHTML = (
     <Report
@@ -2870,6 +3100,27 @@ function App() {
                         </div>
                       </div>
                     )}
+                    {assembled.reportRanges.length > 0 && (
+                      <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-3 text-xs">
+                        <b className="block text-cyan-200">
+                          Report memory annotations
+                        </b>
+                        <p className="mt-1 text-slate-400">
+                          REPORT directives show runtime memory without
+                          allocating or writing bytes.
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1 font-mono text-cyan-200">
+                          {assembled.reportRanges.map(([start, end]) => (
+                            <span
+                              key={`${start}-${end}`}
+                              className="rounded bg-cyan-400/10 px-1.5 py-1"
+                            >
+                              {hex(start, 4)}H–{hex(end, 4)}H
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
                 <Card>
@@ -2887,7 +3138,11 @@ function App() {
                       <kbd className="rounded bg-slate-800 px-1.5 py-1">DB</kbd>
                       /
                       <kbd className="rounded bg-slate-800 px-1.5 py-1">DW</kbd>{" "}
-                      initializes data memory.
+                      writes data to memory;
+                      <kbd className="ml-1 rounded bg-slate-800 px-1.5 py-1">
+                        REPORT
+                      </kbd>{" "}
+                      only includes an existing memory range in the report.
                     </p>
                     <p>
                       Example:{" "}
@@ -2895,6 +3150,10 @@ function App() {
                         ORG 2050H
                         <br />
                         ARRAY: DB 05H, 03H, 09H, 01H
+                        <br />
+                        STA 9010H
+                        <br />
+                        REPORT 9010H, 01H
                       </code>
                     </p>
                     <p>
@@ -2919,9 +3178,9 @@ function App() {
                   </CardHeader>
                   <CardContent className="space-y-3 text-xs text-slate-300">
                     <p>
-                      Declare test data beside your program instead of
-                      hand-entering memory. The report discovers each data block
-                      automatically.
+                      Use DB/DW when your program needs initial memory values.
+                      Use REPORT when you only want the final/runtime contents
+                      of a memory location in the lab report.
                     </p>
                     <pre className="overflow-auto rounded-md border border-violet-400/20 bg-slate-950/80 p-3 font-mono text-[11px] leading-5">
                       <span className="text-amber-300">ORG</span>{" "}
@@ -2933,15 +3192,21 @@ function App() {
                         05H, 03H, 09H, 01H
                       </span>
                       {"\n"}
-                      <span className="text-emerald-300">COUNT:</span>{" "}
-                      <span className="text-amber-300">DW</span>{" "}
-                      <span className="text-fuchsia-300">0004H</span>
+                      <span className="text-amber-300">REPORT</span>{" "}
+                      <span className="text-fuchsia-300">9010H, 01H</span>
+                      {"\n"}
+                      <span className="text-amber-300">REPORT</span>{" "}
+                      <span className="text-fuchsia-300">9020H, 04H</span>
                     </pre>
                     <p>
-                      <b className="text-violet-200">DB</b> writes bytes;{" "}
-                      <b className="text-violet-200">DW</b> writes 16-bit
-                      values. Add a custom report range only when you want to
-                      replace the default memory dump.
+                      <b className="text-violet-200">DB</b> and{" "}
+                      <b className="text-violet-200">DW</b> allocate/write
+                      memory.
+                      <b className="ml-1 text-cyan-200">
+                        REPORT address, count
+                      </b>{" "}
+                      does not write memory; it tells the lab report to display
+                      that many bytes starting at the address.
                     </p>
                   </CardContent>
                 </Card>
@@ -3473,14 +3738,36 @@ function App() {
                       onChange={(e) => setReportTitle(e.target.value)}
                     />
                   </div>
+                  {assembled.reportRanges.length > 0 && (
+                    <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-3 text-xs">
+                      <p className="font-medium text-cyan-200">
+                        Source-defined report ranges
+                      </p>
+                      <p className="mt-1 text-slate-400">
+                        These come from REPORT directives and require no DB/DW
+                        declaration.
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1 font-mono text-cyan-200">
+                        {assembled.reportRanges.map(([start, end]) => (
+                          <span
+                            key={`${start}-${end}`}
+                            className="rounded bg-cyan-400/10 px-1.5 py-1"
+                          >
+                            {hex(start, 4)}H–{hex(end, 4)}H
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <p className="mb-2 text-xs font-medium text-slate-400">
-                      Include memory ranges
+                      Additional memory ranges
                     </p>
                     {ranges.length === 0 && (
                       <p className="mb-3 rounded-md border border-slate-800 bg-slate-900/40 p-2 text-xs text-slate-500">
-                        No custom ranges selected. Only the program code and any
-                        DB/DW data blocks from your source are dumped.
+                        No custom ranges selected. Program code, DB/DW data
+                        blocks, and REPORT ranges from your source are included
+                        automatically.
                       </p>
                     )}
                     {ranges.map((r, i) => (
@@ -3839,7 +4126,7 @@ function Report({
       {showIo && (
         <section className="mt-7">
           <h2 className="border-l-4 border-cyan-600 pl-3 font-sans text-lg font-bold">
-            4. I/O port summary
+            "4. I/O port summary"
           </h2>
           <table className="mt-3 w-full border-collapse font-mono text-[11px]">
             <thead className="bg-slate-100">
