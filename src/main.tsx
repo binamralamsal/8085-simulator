@@ -1188,16 +1188,36 @@ function inlineForWord(src: Element, dst: HTMLElement) {
   if (color) css.push(`color:${color}`);
   const bg = cssColor(cs.backgroundColor);
   if (bg) css.push(`background-color:${bg}`);
-  for (const prop of [
-    "font-family",
-    "font-size",
-    "font-weight",
-    "font-style",
-    "text-align",
-    "text-transform",
-    "white-space",
-  ])
-    css.push(`${prop}:${cs.getPropertyValue(prop)}`);
+
+  // Word's HTML importer is much less capable than a browser's CSS engine.
+  // In particular, generic CSS stacks such as `ui-monospace` can be ignored,
+  // which makes the source code lose its font when pasted. Resolve the visual
+  // font to a concrete Windows-safe family and also emit Word's Mso font hints.
+  const computedFont = cs.fontFamily.toLowerCase();
+  const isMono =
+    computedFont.includes("mono") ||
+    computedFont.includes("consolas") ||
+    computedFont.includes("courier") ||
+    computedFont.includes("menlo") ||
+    computedFont.includes("monaco") ||
+    computedFont.includes("sfmono");
+  const wordFont = isMono
+    ? 'Consolas, "Courier New", monospace'
+    : computedFont.includes("serif")
+      ? 'Georgia, "Times New Roman", serif'
+      : "Arial, Helvetica, sans-serif";
+
+  css.push(`font-family:${wordFont}`);
+  css.push(`mso-font-alt:${isMono ? "Courier New" : "Arial"}`);
+  css.push(`mso-ansi-font-family:${isMono ? "Consolas" : "Arial"}`);
+  css.push(`mso-fareast-font-family:${isMono ? "Consolas" : "Arial"}`);
+  css.push(`mso-bidi-font-family:${isMono ? "Consolas" : "Arial"}`);
+  css.push(`font-size:${cs.fontSize}`);
+  css.push(`font-weight:${cs.fontWeight}`);
+  css.push(`font-style:${cs.fontStyle}`);
+  css.push(`text-align:${cs.textAlign}`);
+  css.push(`text-transform:${cs.textTransform}`);
+  css.push(`white-space:${cs.whiteSpace}`);
   if (cs.lineHeight !== "normal") css.push(`line-height:${cs.lineHeight}`);
   if (cs.letterSpacing !== "normal" && cs.letterSpacing !== "0px")
     css.push(`letter-spacing:${cs.letterSpacing}`);
@@ -1222,9 +1242,173 @@ function inlineForWord(src: Element, dst: HTMLElement) {
   for (let i = 0; i < src.children.length; i++)
     inlineForWord(src.children[i], dst.children[i] as HTMLElement);
 }
+function forceWordCodeFormatting(root: HTMLElement) {
+  // Build the Source column from the raw source text. Do not depend on the
+  // browser's Tailwind/CSS representation: Word's HTML importer is much more
+  // predictable when every token has an explicit old-style HTML color/font.
+  const sourceTable = root.querySelector("section:nth-of-type(2) table");
+  if (!sourceTable) return;
+
+  const syntax = {
+    opcode: "#b45309",
+    label: "#047857",
+    number: "#a21caf",
+    register: "#0e7490",
+    comment: "#64748b",
+    normal: "#0f172a",
+  };
+
+  const appendWordText = (
+    parent: HTMLElement,
+    text: string,
+    color = syntax.normal,
+    italic = false,
+    bold = false,
+  ) => {
+    if (!text) return;
+    const font = document.createElement("font");
+    font.setAttribute("face", "Consolas");
+    font.setAttribute("color", color);
+    font.setAttribute(
+      "style",
+      [
+        "font-family:Consolas,'Courier New',monospace",
+        "mso-ansi-font-family:Consolas",
+        "mso-fareast-font-family:Consolas",
+        "mso-bidi-font-family:Consolas",
+        "font-size:11px",
+        "line-height:1",
+        "mso-line-height-rule:exactly",
+        italic ? "font-style:italic" : "",
+        bold ? "font-weight:700" : "",
+      ]
+        .filter(Boolean)
+        .join(";"),
+    );
+    font.textContent = text;
+    parent.appendChild(font);
+  };
+
+  const appendToken = (parent: HTMLElement, token: string) => {
+    if (!token) return;
+    if (/^;/.test(token)) {
+      appendWordText(parent, token, syntax.comment, true);
+      return;
+    }
+    if (/^[A-Za-z_.$][\w.$]*:$/.test(token)) {
+      appendWordText(parent, token, syntax.label, false, true);
+      return;
+    }
+    if (/^[0-9A-F]+H$/i.test(token)) {
+      appendWordText(parent, token, syntax.number);
+      return;
+    }
+    if (/^(A|B|C|D|E|H|L|M|SP|PSW)$/i.test(token)) {
+      appendWordText(parent, token, syntax.register, false, true);
+      return;
+    }
+    if (/^[A-Za-z][\w]*$/.test(token) && labels.has(token.toUpperCase())) {
+      appendWordText(parent, token, syntax.opcode, false, true);
+      return;
+    }
+    appendWordText(parent, token);
+  };
+
+  sourceTable
+    .querySelectorAll<HTMLElement>("tbody td:nth-child(3)")
+    .forEach((cell) => {
+      const source = cell.textContent ?? "";
+      cell.replaceChildren();
+      cell.setAttribute(
+        "style",
+        [
+          "font-family:Consolas,'Courier New',monospace",
+          "mso-ansi-font-family:Consolas",
+          "mso-fareast-font-family:Consolas",
+          "mso-bidi-font-family:Consolas",
+          "font-size:11px",
+          "color:#0f172a",
+          "white-space:pre-wrap",
+          "line-height:1",
+          "mso-line-height-rule:exactly",
+          "mso-margin-top-alt:0",
+          "mso-margin-bottom-alt:0",
+          "margin:0",
+          "padding:4px 8px",
+          "vertical-align:top",
+        ].join(";"),
+      );
+
+      // Word frequently inserts its Normal paragraph style into pasted table
+      // cells. Give the whole source line a zero-margin paragraph ourselves so
+      // Word has no default paragraph spacing to fall back to.
+      const paragraph = document.createElement("p");
+      paragraph.setAttribute(
+        "style",
+        [
+          "margin:0",
+          "padding:0",
+          "font-family:Consolas,'Courier New',monospace",
+          "mso-ansi-font-family:Consolas",
+          "mso-fareast-font-family:Consolas",
+          "mso-bidi-font-family:Consolas",
+          "font-size:11px",
+          "line-height:1",
+          "mso-line-height-rule:exactly",
+          "mso-margin-top-alt:0",
+          "mso-margin-bottom-alt:0",
+        ].join(";"),
+      );
+      paragraph.setAttribute("class", "MsoNormal");
+      cell.appendChild(paragraph);
+
+      const commentAt = source.indexOf(";");
+      const code = commentAt >= 0 ? source.slice(0, commentAt) : source;
+      const comment = commentAt >= 0 ? source.slice(commentAt) : "";
+      code.split(/(\s+|,)/).forEach((token) => appendToken(paragraph, token));
+      if (comment) appendToken(paragraph, comment);
+    });
+
+  // Remove paragraph spacing from every table cell in the Word fragment, not
+  // only the source-code table. This prevents Word's Normal style from adding
+  // visible space below ordinary address/opcode cells too.
+  root.querySelectorAll<HTMLElement>("table td, table th").forEach((cell) => {
+    cell.style.setProperty("margin", "0");
+    cell.style.setProperty(
+      "padding",
+      cell.tagName === "TH" ? "4px 8px" : "4px 8px",
+    );
+    cell.style.setProperty("vertical-align", "top");
+    cell.style.setProperty("line-height", "1");
+    cell.style.setProperty("mso-margin-top-alt", "0");
+    cell.style.setProperty("mso-margin-bottom-alt", "0");
+    cell.querySelectorAll<HTMLElement>("p").forEach((paragraph) => {
+      paragraph.style.setProperty("margin", "0");
+      paragraph.style.setProperty("padding", "0");
+      paragraph.style.setProperty("line-height", "1");
+      paragraph.style.setProperty("mso-margin-top-alt", "0");
+      paragraph.style.setProperty("mso-margin-bottom-alt", "0");
+    });
+  });
+
+  sourceTable.querySelectorAll<HTMLElement>("thead th").forEach((th) => {
+    th.setAttribute(
+      "style",
+      "background-color:#ffffff;color:#0f172a;font-family:Arial,Helvetica,sans-serif;font-weight:700;border:1px solid #cbd5e1;padding:4px 8px;text-align:left;line-height:1;margin:0;mso-margin-top-alt:0;mso-margin-bottom-alt:0",
+    );
+  });
+}
+
 function buildWordHtml(report: HTMLElement) {
   const clone = report.cloneNode(true) as HTMLElement;
+  // Keep the report's overall typography stable when Word imports the HTML
+  // fragment. Individual elements are still inlined below.
+  clone.setAttribute(
+    "style",
+    `${clone.getAttribute("style") ?? ""};font-family:Arial,Helvetica,sans-serif;color:#0f172a;`,
+  );
   inlineForWord(report, clone);
+  forceWordCodeFormatting(clone);
   // Word has no CSS grid, so grids become real tables.
   clone.querySelectorAll<HTMLElement>("[data-cols]").forEach((grid) => {
     const cols = Number(grid.dataset.cols) || 1;
