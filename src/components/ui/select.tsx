@@ -1,0 +1,8 @@
+import * as SelectPrimitive from "@radix-ui/react-select";
+import { Check, ChevronDown } from "lucide-react";
+import { cn } from "../../lib/utils";
+export const Select=SelectPrimitive.Root;
+export const SelectValue=SelectPrimitive.Value;
+export const SelectTrigger=({className,children,...props}:React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>)=><SelectPrimitive.Trigger className={cn("flex h-9 min-w-32 items-center justify-between gap-2 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:ring-2 focus:ring-cyan-400/30",className)} {...props}>{children}<SelectPrimitive.Icon><ChevronDown size={14}/></SelectPrimitive.Icon></SelectPrimitive.Trigger>;
+export const SelectContent=({className,children,...props}:React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>)=><SelectPrimitive.Portal><SelectPrimitive.Content className={cn("z-50 overflow-hidden rounded-md border border-slate-700 bg-slate-950 p-1 text-slate-100 shadow-2xl",className)} {...props}><SelectPrimitive.Viewport>{children}</SelectPrimitive.Viewport></SelectPrimitive.Content></SelectPrimitive.Portal>;
+export const SelectItem=({className,children,...props}:React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>)=><SelectPrimitive.Item className={cn("relative flex cursor-pointer select-none items-center rounded px-8 py-2 text-sm outline-none data-[highlighted]:bg-cyan-400/15 data-[highlighted]:text-cyan-100",className)} {...props}><SelectPrimitive.ItemIndicator className="absolute left-2"><Check size={14}/></SelectPrimitive.ItemIndicator><SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText></SelectPrimitive.Item>;
