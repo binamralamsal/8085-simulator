@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   BookOpen,
   Box,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardCopy,
@@ -16,21 +17,40 @@ import {
   Plus,
   RotateCcw,
   StepForward,
+  Trash2,
   Upload,
   Wifi,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import CodeMirror from "@uiw/react-codemirror";
-import { StreamLanguage, HighlightStyle, syntaxHighlighting, type StringStream } from "@codemirror/language";
+import {
+  StreamLanguage,
+  HighlightStyle,
+  syntaxHighlighting,
+  type StringStream,
+} from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
-import { oneDark } from "@codemirror/theme-one-dark";
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
+import { Checkbox } from "./components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./components/ui/dropdown-menu";
 import "./styles.css";
 import { Cpu8085 } from "./core/cpu";
 import { hex, type Listing } from "./core/types";
@@ -108,17 +128,75 @@ const labels = new Set([
   "IN",
   "HLT",
 ]);
-const asmEditorTheme = EditorView.theme({
-  "&": { height: "100%", backgroundColor: "#060a12", color: "#e2e8f0" },
-  ".cm-scroller": { overflow: "auto", fontFamily: "var(--font-mono)", lineHeight: "1.6", backgroundColor: "#060a12" },
-  ".cm-content": { caretColor: "#67e8f9", padding: "14px 0 96px", minHeight: "100%" },
-  ".cm-gutters": { backgroundColor: "#090e18", color: "#4b6689", borderRight: "1px solid #1e293b" },
-  ".cm-activeLine": { backgroundColor: "#102037" },
-  ".cm-activeLineGutter": { backgroundColor: "#102037", color: "#7dd3fc" },
-  ".cm-cursor": { borderLeftColor: "#67e8f9" },
-  ".cm-selectionBackground": { backgroundColor: "#155e75 !important" },
-  "&.cm-focused .cm-selectionBackground": { backgroundColor: "#0e7490 !important" },
-}, { dark: true });
+const asmEditorTheme = EditorView.theme(
+  {
+    "&": {
+      height: "100%",
+      backgroundColor: "transparent",
+      color: "#e2e8f0",
+      fontSize: "13.5px",
+    },
+    "&.cm-focused": { outline: "none" },
+    ".cm-scroller": {
+      overflow: "auto",
+      fontFamily: "var(--font-mono)",
+      lineHeight: "1.7",
+    },
+    ".cm-content": { caretColor: "#22d3ee", padding: "12px 0 64px" },
+    ".cm-line": { padding: "0 16px 0 8px" },
+    ".cm-gutters": {
+      backgroundColor: "transparent",
+      color: "#475569",
+      border: "none",
+      paddingLeft: "6px",
+    },
+    ".cm-lineNumbers .cm-gutterElement": { padding: "0 10px 0 6px" },
+    ".cm-activeLine": { backgroundColor: "rgba(56,189,248,0.06)" },
+    ".cm-activeLineGutter": {
+      backgroundColor: "transparent",
+      color: "#7dd3fc",
+    },
+    ".cm-cursor, .cm-dropCursor": {
+      borderLeftColor: "#22d3ee",
+      borderLeftWidth: "2px",
+    },
+    // Translucent selection: syntax colors stay readable on top of it
+    ".cm-selectionBackground": {
+      backgroundColor: "rgba(56,189,248,0.22) !important",
+      borderRadius: "3px",
+    },
+    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground":
+      {
+        backgroundColor: "rgba(56,189,248,0.32) !important",
+      },
+    ".cm-selectionMatch": {
+      backgroundColor: "rgba(251,191,36,0.16)",
+      borderRadius: "3px",
+    },
+    ".cm-searchMatch": {
+      backgroundColor: "rgba(232,121,249,0.25)",
+      borderRadius: "3px",
+    },
+    ".cm-searchMatch.cm-searchMatch-selected": {
+      backgroundColor: "rgba(232,121,249,0.45)",
+    },
+    ".cm-panels": {
+      backgroundColor: "#0b1220",
+      color: "#cbd5e1",
+      borderTop: "1px solid #1e293b",
+    },
+    ".cm-panels input, .cm-panels button": {
+      fontFamily: "inherit",
+      fontSize: "12px",
+    },
+    ".cm-foldPlaceholder": {
+      backgroundColor: "#1e293b",
+      border: "none",
+      color: "#94a3b8",
+    },
+  },
+  { dark: true },
+);
 const asmHighlight = HighlightStyle.define([
   { tag: tags.keyword, color: "#fbbf24", fontWeight: "700" },
   { tag: tags.atom, color: "#67e8f9", fontWeight: "600" },
@@ -132,21 +210,29 @@ const asm8085 = {
   name: "8085 assembly",
   token(stream: StringStream) {
     if (stream.eatSpace()) return null;
-    if (stream.match(";")) { stream.skipToEnd(); return "comment"; }
+    if (stream.match(";")) {
+      stream.skipToEnd();
+      return "comment";
+    }
     if (stream.match(/^[A-Za-z_.$][\w.$]*:/)) return "labelName";
     if (stream.match(/^['\"][^'\"]*['\"]/)) return "string";
     if (stream.match(/^(?:[0-9A-F]+H|0X[0-9A-F]+|\d+)/i)) return "number";
     if (stream.match(/^[A-Za-z][\w]*/)) {
       const word = stream.current().toUpperCase();
       if (labels.has(word)) return "keyword";
-      if (["A", "B", "C", "D", "E", "H", "L", "M", "SP", "PSW"].includes(word)) return "atom";
+      if (["A", "B", "C", "D", "E", "H", "L", "M", "SP", "PSW"].includes(word))
+        return "atom";
       return "variableName";
     }
     stream.next();
     return null;
   },
 };
-const asmExtensions = [oneDark, StreamLanguage.define(asm8085), syntaxHighlighting(asmHighlight), asmEditorTheme];
+const asmExtensions = [
+  StreamLanguage.define(asm8085),
+  syntaxHighlighting(asmHighlight),
+  asmEditorTheme,
+];
 function highlight(line: string) {
   const [body, comment = ""] = line.split(";");
   return (
@@ -178,10 +264,32 @@ function highlight(line: string) {
 }
 function reportHighlight(line: string) {
   const [body, comment = ""] = line.split(";");
-  return <>
-    {body.split(/(\s+|,)/).map((token, index) => labels.has(token.toUpperCase()) ? <span key={index} className="font-bold text-amber-700">{token}</span> : /^[A-Z.$]+:$/.test(token) ? <span key={index} className="font-bold text-emerald-700">{token}</span> : /^[0-9A-F]+H$/i.test(token) ? <span key={index} className="text-fuchsia-700">{token}</span> : /^(A|B|C|D|E|H|L|M|SP|PSW)$/i.test(token) ? <span key={index} className="font-semibold text-cyan-700">{token}</span> : token)}
-    {comment && <span className="italic text-slate-500">;{comment}</span>}
-  </>;
+  return (
+    <>
+      {body.split(/(\s+|,)/).map((token, index) =>
+        labels.has(token.toUpperCase()) ? (
+          <span key={index} className="font-bold text-amber-700">
+            {token}
+          </span>
+        ) : /^[A-Z.$]+:$/.test(token) ? (
+          <span key={index} className="font-bold text-emerald-700">
+            {token}
+          </span>
+        ) : /^[0-9A-F]+H$/i.test(token) ? (
+          <span key={index} className="text-fuchsia-700">
+            {token}
+          </span>
+        ) : /^(A|B|C|D|E|H|L|M|SP|PSW)$/i.test(token) ? (
+          <span key={index} className="font-semibold text-cyan-700">
+            {token}
+          </span>
+        ) : (
+          token
+        ),
+      )}
+      {comment && <span className="italic text-slate-500">;{comment}</span>}
+    </>
+  );
 }
 const registers = ["B", "C", "D", "E", "H", "L", "M", "A"],
   registerPairs = ["B", "D", "H", "SP"];
@@ -293,7 +401,16 @@ function instructionBytes(
   const conditionalCalls = ["CNZ", "CZ", "CNC", "CC", "CPO", "CPE", "CP", "CM"];
   if (conditionalCalls.includes(op))
     return word(0xc4 | (conditionalCalls.indexOf(op) << 3), args[0]);
-  const conditionalReturns = ["RNZ", "RZ", "RNC", "RC", "RPO", "RPE", "RP", "RM"];
+  const conditionalReturns = [
+    "RNZ",
+    "RZ",
+    "RNC",
+    "RC",
+    "RPO",
+    "RPE",
+    "RP",
+    "RM",
+  ];
   if (conditionalReturns.includes(op))
     return [0xc0 | (conditionalReturns.indexOf(op) << 3)];
   if (op === "RST") {
@@ -355,7 +472,8 @@ function assembleSource(source: string, start: number) {
     try {
       if (op === "ORG") {
         const target = parse(args[0]);
-        if (Number.isNaN(target)) throw Error("ORG requires a hexadecimal address");
+        if (Number.isNaN(target))
+          throw Error("ORG requires a hexadecimal address");
         address = target;
         return;
       }
@@ -363,11 +481,13 @@ function assembleSource(source: string, start: number) {
       let bytes: number[];
       if (op === "DB")
         bytes = args.flatMap((x) =>
-          /^['\"].*['\"]$/.test(x) ? [...x.slice(1, -1)].map((c) => c.charCodeAt(0)) : (() => {
-            const value = parse(x);
-            if (Number.isNaN(value)) throw Error(`Invalid DB byte '${x}'`);
-            return [value & 255];
-          })(),
+          /^['\"].*['\"]$/.test(x)
+            ? [...x.slice(1, -1)].map((c) => c.charCodeAt(0))
+            : (() => {
+                const value = parse(x);
+                if (Number.isNaN(value)) throw Error(`Invalid DB byte '${x}'`);
+                return [value & 255];
+              })(),
         );
       else if (op === "DW")
         bytes = args.flatMap((x) => {
@@ -384,13 +504,147 @@ function assembleSource(source: string, start: number) {
       errors.push(`Line ${index + 1}: ${(e as Error).message}`);
     }
   });
-  const mergedDataRanges = dataRanges.reduce<[number, number][]>((merged, range) => {
-    const previous = merged.at(-1);
-    if (previous && previous[1] + 1 === range[0]) previous[1] = range[1];
-    else merged.push(range);
-    return merged;
-  }, []);
+  const mergedDataRanges = dataRanges.reduce<[number, number][]>(
+    (merged, range) => {
+      const previous = merged.at(-1);
+      if (previous && previous[1] + 1 === range[0]) previous[1] = range[1];
+      else merged.push(range);
+      return merged;
+    },
+    [],
+  );
   return { listing, errors, dataRanges: mergedDataRanges };
+}
+const colorCache = new Map<string, string>();
+let colorCtx: CanvasRenderingContext2D | null = null;
+// Word cannot read oklch()/lab() colors that Tailwind v4 emits, so normalise to rgb().
+function cssColor(value: string) {
+  if (!value || value === "transparent") return "";
+  const cached = colorCache.get(value);
+  if (cached !== undefined) return cached;
+  colorCtx ??= document
+    .createElement("canvas")
+    .getContext("2d", { willReadFrequently: true });
+  let out = value;
+  if (colorCtx) {
+    colorCtx.clearRect(0, 0, 1, 1);
+    colorCtx.fillStyle = "#000";
+    colorCtx.fillStyle = value;
+    colorCtx.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = colorCtx.getImageData(0, 0, 1, 1).data;
+    out = a === 0 ? "" : `rgb(${r}, ${g}, ${b})`;
+  }
+  colorCache.set(value, out);
+  return out;
+}
+// Copies the computed look of every element into inline styles so the pasted
+// result matches the on-screen report (Word ignores class names and stylesheets).
+function inlineForWord(src: Element, dst: HTMLElement) {
+  const cs = getComputedStyle(src);
+  const css: string[] = [];
+  const color = cssColor(cs.color);
+  if (color) css.push(`color:${color}`);
+  const bg = cssColor(cs.backgroundColor);
+  if (bg) css.push(`background-color:${bg}`);
+  for (const prop of [
+    "font-family",
+    "font-size",
+    "font-weight",
+    "font-style",
+    "text-align",
+    "text-transform",
+    "white-space",
+  ])
+    css.push(`${prop}:${cs.getPropertyValue(prop)}`);
+  if (cs.lineHeight !== "normal") css.push(`line-height:${cs.lineHeight}`);
+  if (cs.letterSpacing !== "normal" && cs.letterSpacing !== "0px")
+    css.push(`letter-spacing:${cs.letterSpacing}`);
+  const isCell = src.tagName === "TD" || src.tagName === "TH";
+  for (const side of ["top", "right", "bottom", "left"]) {
+    css.push(`padding-${side}:${cs.getPropertyValue(`padding-${side}`)}`);
+    const margin = cs.getPropertyValue(`margin-${side}`);
+    if (!isCell && margin !== "0px") css.push(`margin-${side}:${margin}`);
+    const width = cs.getPropertyValue(`border-${side}-width`);
+    const style = cs.getPropertyValue(`border-${side}-style`);
+    if (parseFloat(width) > 0 && style !== "none")
+      css.push(
+        `border-${side}:${width} ${style} ${cssColor(cs.getPropertyValue(`border-${side}-color`)) || "#000"}`,
+      );
+  }
+  if (src.tagName === "TABLE")
+    css.push("width:100%", "border-collapse:collapse");
+  if (cs.display === "grid")
+    dst.dataset.cols = String(cs.gridTemplateColumns.split(" ").length);
+  dst.removeAttribute("class");
+  dst.setAttribute("style", css.join(";"));
+  for (let i = 0; i < src.children.length; i++)
+    inlineForWord(src.children[i], dst.children[i] as HTMLElement);
+}
+function buildWordHtml(report: HTMLElement) {
+  const clone = report.cloneNode(true) as HTMLElement;
+  inlineForWord(report, clone);
+  // Word has no CSS grid, so grids become real tables.
+  clone.querySelectorAll<HTMLElement>("[data-cols]").forEach((grid) => {
+    const cols = Number(grid.dataset.cols) || 1;
+    const table = document.createElement("table");
+    table.setAttribute(
+      "style",
+      `${grid.getAttribute("style") ?? ""};width:100%;border-collapse:collapse`,
+    );
+    const body = table.createTBody();
+    let row!: HTMLTableRowElement;
+    [...grid.children].forEach((child, index) => {
+      if (index % cols === 0) row = body.insertRow();
+      const cell = row.insertCell();
+      cell.setAttribute("style", "padding:4px 10px");
+      cell.appendChild(child);
+    });
+    grid.replaceWith(table);
+  });
+  return clone.outerHTML;
+}
+// Serialises the page's compiled stylesheet so exported HTML looks exactly like the preview.
+function collectPageCss() {
+  let css = "";
+  for (const sheet of Array.from(document.styleSheets)) {
+    try {
+      css +=
+        Array.from(sheet.cssRules)
+          .map((rule) => rule.cssText)
+          .filter((text) => !/cm-|\u037c|sonner/.test(text))
+          .join("\n") + "\n";
+    } catch {
+      /* cross-origin sheet, skip */
+    }
+  }
+  return css;
+}
+const escapeHtml = (value: string) =>
+  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+async function writeRichClipboard(html: string, text: string) {
+  if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([text], { type: "text/plain" }),
+      }),
+    ]);
+    return;
+  }
+  const box = document.createElement("div");
+  box.contentEditable = "true";
+  box.innerHTML = html;
+  box.style.cssText = "position:fixed;left:-9999px;top:0;background:#fff";
+  document.body.appendChild(box);
+  const range = document.createRange();
+  range.selectNodeContents(box);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  const ok = document.execCommand("copy");
+  selection?.removeAllRanges();
+  box.remove();
+  if (!ok) throw new Error("Clipboard copy failed");
 }
 function App() {
   const [code, setCode] = useState(starter),
@@ -404,13 +658,20 @@ function App() {
     [report, setReport] = useState(false),
     [fillAddress, setFillAddress] = useState("9000"),
     [fillData, setFillData] = useState("43 00 00 00"),
-    [reportTitle, setReportTitle] = useState("8085 Microprocessor Experiment Report"),
-    [speed, setSpeed] = useState("80"),
-    [clock, setClock] = useState("5"),
+    [reportTitle, setReportTitle] = useState(
+      "8085 Microprocessor Experiment Report",
+    ),
+    [speed, setSpeed] = useState("1"),
+    [clock, setClock] = useState("6"),
     [running, setRunning] = useState(false),
     [lastOperation, setLastOperation] = useState("Waiting to execute"),
-    [recentMemory, setRecentMemory] = useState<Set<number>>(new Set());
-  const timer = useRef<number | undefined>();
+    [recentMemory, setRecentMemory] = useState<Set<number>>(new Set()),
+    [assembledKey, setAssembledKey] = useState<string | null>(null),
+    [showIo, setShowIo] = useState(true),
+    [showIoInput, setShowIoInput] = useState(true);
+  const sourceKey = `${pc}|${code}`;
+  const isStale = assembledKey !== sourceKey; // source changed since last assemble
+  const stepRef = useRef<(fromTimer?: boolean) => void>(() => {});
   const importInput = useRef<HTMLInputElement>(null);
   const programmed = useRef<Set<number>>(new Set());
   const flashTimers = useRef<Map<number, number>>(new Map());
@@ -418,11 +679,17 @@ function App() {
   const assembled = useMemo(() => assembleSource(code, pc), [code, pc]);
   const listing = assembled.listing;
   const breakpointAddresses = useMemo(
-    () => new Set(listing.filter((line) => breakpoints.has(line.line)).map((line) => line.address)),
+    () =>
+      new Set(
+        listing
+          .filter((line) => breakpoints.has(line.line))
+          .map((line) => line.address),
+      ),
     [listing, breakpoints],
   );
+  // An id makes identical messages replace each other instead of stacking.
   function notify(message: string, type: "success" | "error" = "success") {
-    toast[type](message);
+    toast[type](message, { id: message });
   }
   function flashMemory(addresses: Iterable<number>) {
     const unique = [...new Set(addresses)].map((address) => address & 0xffff);
@@ -431,14 +698,17 @@ function App() {
     unique.forEach((address) => {
       const oldTimer = flashTimers.current.get(address);
       if (oldTimer) window.clearTimeout(oldTimer);
-      flashTimers.current.set(address, window.setTimeout(() => {
-        setRecentMemory((current) => {
-          const next = new Set(current);
-          next.delete(address);
-          return next;
-        });
-        flashTimers.current.delete(address);
-      }, 900));
+      flashTimers.current.set(
+        address,
+        window.setTimeout(() => {
+          setRecentMemory((current) => {
+            const next = new Set(current);
+            next.delete(address);
+            return next;
+          });
+          flashTimers.current.delete(address);
+        }, 900),
+      );
     });
   }
   function downloadFile(name: string, body: string, type: string) {
@@ -449,7 +719,42 @@ function App() {
     link.click();
     URL.revokeObjectURL(url);
   }
+  async function reportElement() {
+    if (!report) {
+      setReport(true);
+      // wait for React to paint the report before reading it from the DOM
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+    }
+    return document.querySelector<HTMLElement>(".report-document");
+  }
+  async function copyForWord() {
+    const element = await reportElement();
+    if (!element) return notify("Generate the report first.", "error");
+    try {
+      await writeRichClipboard(buildWordHtml(element), element.innerText);
+      notify("Report copied with formatting. Paste it into MS Word.");
+    } catch {
+      notify("Copy failed. Allow clipboard access and try again.", "error");
+    }
+  }
+  async function downloadReport() {
+    const element = await reportElement();
+    if (!element) return notify("Generate the report first.", "error");
+    const css = collectPageCss();
+    const sheet = `<div class="report-sheet">${element.outerHTML}</div>`;
+    const html = css.trim()
+      ? `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(reportTitle)}</title><style>${css}</style><style>html,body{margin:0;background:#f1f5f9!important}.report-sheet{max-width:1100px;margin:32px auto;padding:32px;background:#fff;color:#0f172a;border-radius:8px;box-shadow:0 1px 3px rgba(15,23,42,.18)}@media print{html,body{background:#fff!important}.report-sheet{margin:0;max-width:none;padding:0;border-radius:0;box-shadow:none}}</style></head><body>${sheet}</body></html>`
+      : `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(reportTitle)}</title></head><body>${buildWordHtml(element)}</body></html>`;
+    downloadFile("8085-lab-report.html", html, "text/html");
+    notify("HTML report downloaded.");
+  }
+  function stop() {
+    setRunning(false);
+  }
   function assemble() {
+    stop();
     if (assembled.errors.length) {
       notify(assembled.errors[0], "error");
       return false;
@@ -464,22 +769,33 @@ function App() {
       }),
     );
     cpu.reset(listing[0]?.address ?? pc);
+    setLastOperation("Waiting to execute");
     flashMemory(programmed.current);
     notify(`Assembled ${listing.length} statements at ${hex(cpu.pc, 4)}H`);
+    setAssembledKey(sourceKey);
     rerender();
     return true;
   }
-  function stop() {
-    if (timer.current) window.clearInterval(timer.current);
-    timer.current = undefined;
-    setRunning(false);
+  function resetCpu(silent = false) {
+    stop();
+    cpu.reset(listing[0]?.address ?? pc);
+    setLastOperation("Waiting to execute");
+    rerender();
+    if (!silent) notify("Processor reset.");
   }
-  function step(ignoreBreakpoint = true) {
+  function step(fromTimer = false) {
+    if (!fromTimer && isStale && !assemble()) return;
     if (cpu.halted) {
-      notify("Processor is halted — reset to run again.", "error");
+      // A stale timer tick must never spam notifications
+      if (fromTimer) stop();
+      else
+        notify(
+          "Processor is halted. Press Run or Reset to start again.",
+          "error",
+        );
       return;
     }
-    if (!ignoreBreakpoint && breakpointAddresses.has(cpu.pc)) {
+    if (fromTimer && breakpointAddresses.has(cpu.pc)) {
       stop();
       notify(`Paused at breakpoint ${hex(cpu.pc, 4)}H.`);
       return;
@@ -487,7 +803,9 @@ function App() {
     try {
       const instruction = cpu.step();
       flashMemory(cpu.lastWrites);
-      setLastOperation(`${hex(instruction.address, 4)}H · ${instruction.instruction}`);
+      setLastOperation(
+        `${hex(instruction.address, 4)}H · ${instruction.instruction}`,
+      );
       rerender();
       if (cpu.halted) {
         stop();
@@ -498,19 +816,30 @@ function App() {
       notify((e as Error).message, "error");
     }
   }
+  stepRef.current = step; // timer always calls the latest closure
   function run() {
-    if (running) {
-      stop();
-      return;
+    if (running) return stop();
+    if (isStale) {
+      if (!assemble()) return; // source changed → re-assemble
+    } else if (cpu.halted) {
+      resetCpu(true); // already ran → just restart, no re-assemble
     }
-    if (cpu.instructions === 0 && !assemble()) return;
     setRunning(true);
-    timer.current = window.setInterval(() => step(false), Number(speed));
   }
-  useEffect(() => () => {
-    stop();
-    flashTimers.current.forEach((timerId) => window.clearTimeout(timerId));
-  }, []);
+  function assembleAndRun() {
+    if (!assemble()) return;
+    setRunning(true);
+  }
+  // The interval is owned by an effect, so changing speed while running just works
+  useEffect(() => {
+    if (!running) return;
+    const id = window.setInterval(() => stepRef.current(true), Number(speed));
+    return () => window.clearInterval(id);
+  }, [running, speed]);
+  useEffect(
+    () => () => flashTimers.current.forEach((t) => window.clearTimeout(t)),
+    [],
+  );
   useEffect(() => setPageAddress(hex(page * 256, 4)), [page]);
   function setMemory(a: number, v: string) {
     const n = parse(v);
@@ -550,15 +879,25 @@ function App() {
     rerender();
   }
   const mem = Array.from({ length: 256 }, (_, i) => page * 256 + i);
+  // No hidden default range: only source DB/DW blocks plus what the user adds.
   const reportRanges = useMemo(
-    () => [...assembled.dataRanges, ...(ranges.length ? ranges : [[0x9000, 0x900f] as [number, number]])],
+    () => [...assembled.dataRanges, ...ranges],
     [assembled.dataRanges, ranges],
   );
-  const reportHTML = <Report title={reportTitle} listing={listing} ranges={reportRanges} ports={ports} />;
+  const reportHTML = (
+    <Report
+      title={reportTitle}
+      listing={listing}
+      ranges={reportRanges}
+      ports={ports}
+      showIo={showIo}
+      showIoInput={showIoInput}
+    />
+  );
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 selection:bg-cyan-400/30">
       <header className="sticky top-0 z-20 border-b border-slate-800 bg-[#090e18]/90 backdrop-blur">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between px-5 py-4">
+        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 px-5 py-3">
           <div className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-cyan-300 to-blue-500 font-mono font-black text-slate-950 shadow-lg shadow-cyan-500/20">
               85
@@ -567,16 +906,76 @@ function App() {
               <h1 className="font-semibold tracking-tight">
                 8085 <span className="text-cyan-300">Lab Studio</span>
               </h1>
-              <p className="text-xs text-slate-500">
+              <p className="hidden text-xs text-slate-500 sm:block">
                 Compiler · emulator · observability · reporting
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-400">
-            <span
-              className={`h-2 w-2 rounded-full ${cpu.halted ? "bg-amber-400" : "bg-cyan-400 animate-pulse"}`}
-            />
-            {cpu.halted ? "HALTED" : "READY"}
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Split button: Run + chevron menu (shadcn DropdownMenu) */}
+            <DropdownMenu>
+              <div className="flex h-9 items-stretch overflow-hidden rounded-lg border border-cyan-400/30">
+                <Button
+                  size="sm"
+                  onClick={run}
+                  variant={running ? "destructive" : "default"}
+                  className="h-full rounded-none border-0 px-4"
+                >
+                  {running ? <Pause size={15} /> : <Play size={15} />}
+                  {running ? "Pause" : "Run"}
+                </Button>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="icon"
+                    aria-label="More run options"
+                    variant={running ? "destructive" : "default"}
+                    className="h-full w-8 rounded-none border-0 border-l border-black/25 [&[data-state=open]>svg]:rotate-180"
+                  >
+                    <ChevronDown size={15} className="transition-transform" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </div>
+              <DropdownMenuContent align="end" sideOffset={8} className="w-56">
+                <DropdownMenuItem onSelect={() => assemble()}>
+                  <Box className="text-cyan-300" />
+                  Assemble
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => assembleAndRun()}>
+                  <Play className="text-emerald-300" />
+                  Run and Assemble
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => resetCpu()}>
+                  <RotateCcw className="text-amber-300" />
+                  Reset
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <div className="ml-1 flex items-center gap-2 rounded-full">
+              {" "}
+              <div className="ml-1 flex items-center gap-2 rounded-full border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-400">
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    running
+                      ? "animate-pulse bg-emerald-400"
+                      : cpu.halted
+                        ? "bg-amber-400"
+                        : isStale
+                          ? "bg-slate-500"
+                          : "animate-pulse bg-cyan-400"
+                  }`}
+                />
+                {running
+                  ? "RUNNING"
+                  : cpu.halted
+                    ? "HALTED"
+                    : isStale
+                      ? "EDITED"
+                      : "READY"}
+              </div>
+            </div>
           </div>
         </div>
       </header>
@@ -605,42 +1004,69 @@ function App() {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="workspace">
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_350px]">
+            <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_350px]">
               <Card>
                 <CardHeader>
                   <div>
                     <CardTitle>Source workspace</CardTitle>
                     <p className="mt-1 text-xs text-slate-500">
-                      Full editor surface · line numbers · syntax colors · live diagnostics
+                      Full editor surface · line numbers · syntax colors · live
+                      diagnostics
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    <input ref={importInput} type="file" accept=".asm,.txt,text/plain" className="hidden" onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = () => { setCode(String(reader.result ?? "")); notify(`Imported ${file.name}`); };
-                      reader.readAsText(file);
-                      event.target.value = "";
-                    }} />
-                    <Button size="sm" variant="outline" onClick={() => importInput.current?.click()}>
+                    <input
+                      ref={importInput}
+                      type="file"
+                      accept=".asm,.txt,text/plain"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          setCode(String(reader.result ?? ""));
+                          notify(`Imported ${file.name}`);
+                        };
+                        reader.readAsText(file);
+                        event.target.value = "";
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => importInput.current?.click()}
+                    >
                       <Upload size={14} />
                       Import
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => { downloadFile("8085-program.asm", code, "text/plain"); notify("Assembly source downloaded."); }}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        downloadFile("8085-program.asm", code, "text/plain");
+                        notify("Assembly source downloaded.");
+                      }}
+                    >
                       <Download size={14} />
                       Export
                     </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[min(62vh,680px)] min-h-[420px] overflow-hidden rounded-lg border border-slate-800">
+                  <div className="h-[min(62vh,680px)] min-h-[420px] overflow-hidden rounded-xl border border-slate-800 bg-[#060a12] shadow-inner transition-colors focus-within:border-cyan-500/40">
                     <CodeMirror
                       value={code}
                       height="100%"
+                      className="h-full"
+                      theme="none"
                       extensions={asmExtensions}
                       onChange={setCode}
-                      basicSetup={{ lineNumbers: true, highlightActiveLine: true, foldGutter: true }}
+                      basicSetup={{
+                        lineNumbers: true,
+                        highlightActiveLine: true,
+                        foldGutter: true,
+                      }}
                     />
                   </div>
                   <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -676,8 +1102,12 @@ function App() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Build intelligence</CardTitle>
-                    <span className={`rounded-full px-2 py-1 text-xs ${assembled.errors.length ? "bg-rose-400/10 text-rose-300" : "bg-emerald-400/10 text-emerald-300"}`}>
-                      {assembled.errors.length ? `${assembled.errors.length} issue${assembled.errors.length === 1 ? "" : "s"}` : "Ready"}
+                    <span
+                      className={`rounded-full px-2 py-1 text-xs ${assembled.errors.length ? "bg-rose-400/10 text-rose-300" : "bg-emerald-400/10 text-emerald-300"}`}
+                    >
+                      {assembled.errors.length
+                        ? `${assembled.errors.length} issue${assembled.errors.length === 1 ? "" : "s"}`
+                        : "Ready"}
                     </span>
                   </CardHeader>
                   <CardContent className="space-y-3 text-sm">
@@ -688,9 +1118,14 @@ function App() {
                       </b>
                     </div>
                     {assembled.errors.length > 0 && (
-                      <div role="alert" className="rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-xs text-rose-200">
+                      <div
+                        role="alert"
+                        className="rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-xs text-rose-200"
+                      >
                         <b className="block pb-1">Live assembly feedback</b>
-                        {assembled.errors.slice(0, 3).map((error) => <p key={error}>{error}</p>)}
+                        {assembled.errors.slice(0, 3).map((error) => (
+                          <p key={error}>{error}</p>
+                        ))}
                       </div>
                     )}
                     <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
@@ -701,10 +1136,22 @@ function App() {
                     </div>
                     {assembled.dataRanges.length > 0 && (
                       <div className="rounded-lg border border-violet-400/20 bg-violet-400/5 p-3 text-xs">
-                        <b className="block text-violet-200">Detected data declarations</b>
-                        <p className="mt-1 text-slate-400">These DB/DW ranges are included automatically in the lab report.</p>
+                        <b className="block text-violet-200">
+                          Detected data declarations
+                        </b>
+                        <p className="mt-1 text-slate-400">
+                          These DB/DW ranges are included automatically in the
+                          lab report.
+                        </p>
                         <div className="mt-2 flex flex-wrap gap-1 font-mono text-violet-200">
-                          {assembled.dataRanges.map(([start, end]) => <span key={`${start}-${end}`} className="rounded bg-violet-400/10 px-1.5 py-1">{hex(start, 4)}H–{hex(end, 4)}H</span>)}
+                          {assembled.dataRanges.map(([start, end]) => (
+                            <span
+                              key={`${start}-${end}`}
+                              className="rounded bg-violet-400/10 px-1.5 py-1"
+                            >
+                              {hex(start, 4)}H–{hex(end, 4)}H
+                            </span>
+                          ))}
                         </div>
                       </div>
                     )}
@@ -727,21 +1174,60 @@ function App() {
                       <kbd className="rounded bg-slate-800 px-1.5 py-1">DW</kbd>{" "}
                       initializes data memory.
                     </p>
-                    <p>Example: <code className="text-violet-200">ORG 2050H<br />ARRAY: DB 05H, 03H, 09H, 01H</code></p>
-                    <p>Use <kbd className="rounded bg-slate-800 px-1.5 py-1">Ctrl</kbd> + <kbd className="rounded bg-slate-800 px-1.5 py-1">F</kbd> to find source text.</p>
+                    <p>
+                      Example:{" "}
+                      <code className="text-violet-200">
+                        ORG 2050H
+                        <br />
+                        ARRAY: DB 05H, 03H, 09H, 01H
+                      </code>
+                    </p>
+                    <p>
+                      Use{" "}
+                      <kbd className="rounded bg-slate-800 px-1.5 py-1">
+                        Ctrl
+                      </kbd>{" "}
+                      +{" "}
+                      <kbd className="rounded bg-slate-800 px-1.5 py-1">F</kbd>{" "}
+                      to find source text.
+                    </p>
                   </CardContent>
                 </Card>
                 <Card className="border-violet-400/25 bg-gradient-to-br from-violet-400/10 to-slate-950">
                   <CardHeader>
                     <div>
                       <CardTitle>Memory recipe</CardTitle>
-                      <p className="mt-1 text-xs text-violet-200/70">Lab Studio extension</p>
+                      <p className="mt-1 text-xs text-violet-200/70">
+                        Lab Studio extension
+                      </p>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3 text-xs text-slate-300">
-                    <p>Declare test data beside your program instead of hand-entering memory. The report discovers each data block automatically.</p>
-                    <pre className="overflow-auto rounded-md border border-violet-400/20 bg-slate-950/80 p-3 font-mono text-[11px] leading-5"><span className="text-amber-300">ORG</span> <span className="text-fuchsia-300">2050H</span>{"\n"}<span className="text-emerald-300">ARRAY:</span> <span className="text-amber-300">DB</span> <span className="text-fuchsia-300">05H, 03H, 09H, 01H</span>{"\n"}<span className="text-emerald-300">COUNT:</span> <span className="text-amber-300">DW</span> <span className="text-fuchsia-300">0004H</span></pre>
-                    <p><b className="text-violet-200">DB</b> writes bytes; <b className="text-violet-200">DW</b> writes 16-bit values. Add a custom report range only when you want to replace the default memory dump.</p>
+                    <p>
+                      Declare test data beside your program instead of
+                      hand-entering memory. The report discovers each data block
+                      automatically.
+                    </p>
+                    <pre className="overflow-auto rounded-md border border-violet-400/20 bg-slate-950/80 p-3 font-mono text-[11px] leading-5">
+                      <span className="text-amber-300">ORG</span>{" "}
+                      <span className="text-fuchsia-300">2050H</span>
+                      {"\n"}
+                      <span className="text-emerald-300">ARRAY:</span>{" "}
+                      <span className="text-amber-300">DB</span>{" "}
+                      <span className="text-fuchsia-300">
+                        05H, 03H, 09H, 01H
+                      </span>
+                      {"\n"}
+                      <span className="text-emerald-300">COUNT:</span>{" "}
+                      <span className="text-amber-300">DW</span>{" "}
+                      <span className="text-fuchsia-300">0004H</span>
+                    </pre>
+                    <p>
+                      <b className="text-violet-200">DB</b> writes bytes;{" "}
+                      <b className="text-violet-200">DW</b> writes 16-bit
+                      values. Add a custom report range only when you want to
+                      replace the default memory dump.
+                    </p>
                   </CardContent>
                 </Card>
               </aside>
@@ -750,52 +1236,89 @@ function App() {
           <TabsContent value="debug">
             <div className="space-y-5">
               <Card className="border-cyan-950 bg-gradient-to-r from-slate-950 to-cyan-950/30">
-                <CardContent className="flex flex-wrap items-center gap-3 p-4">
-                  <Button onClick={run} variant={running ? "destructive" : "default"}>
-                    {running ? <Pause size={15} /> : <Play size={15} />}
-                    {running ? "Pause" : "Run"}
-                  </Button>
-                  <Button variant="secondary" onClick={step} disabled={running}>
-                    <StepForward size={15} />
-                    Step
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      stop();
-                      cpu.reset(listing[0]?.address ?? pc);
-                      rerender();
-                      notify("Processor reset.");
-                    }}
-                  >
-                    <RotateCcw size={15} />
-                    Reset
-                  </Button>
-                  <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-2">
-                    <Label htmlFor="visual-speed">Visual speed</Label>
-                    <Select value={speed} onValueChange={setSpeed}>
-                      <SelectTrigger id="visual-speed"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="600">Slow · 600 ms</SelectItem><SelectItem value="300">Normal · 300 ms</SelectItem><SelectItem value="80">Fast · 80 ms</SelectItem><SelectItem value="1">Maximum</SelectItem></SelectContent>
-                    </Select>
+                <CardContent className="space-y-4 p-4">
+                  <div className="flex flex-wrap items-end gap-x-5 gap-y-4">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        className="h-9"
+                        onClick={run}
+                        variant={running ? "destructive" : "default"}
+                      >
+                        {running ? <Pause size={15} /> : <Play size={15} />}
+                        {running ? "Pause" : "Run"}
+                      </Button>
+                      <Button
+                        className="h-9"
+                        variant="secondary"
+                        onClick={() => step(false)}
+                        disabled={running}
+                      >
+                        <StepForward size={15} />
+                        Step
+                      </Button>
+                      <Button
+                        className="h-9"
+                        variant="outline"
+                        onClick={() => resetCpu()}
+                      >
+                        <RotateCcw size={15} />
+                        Reset
+                      </Button>
+                    </div>
+                    <div className="hidden h-9 w-px bg-slate-800 lg:block" />
+                    <div className="grid gap-1.5">
+                      <Label
+                        htmlFor="visual-speed"
+                        className="text-[11px] uppercase tracking-wider text-slate-500"
+                      >
+                        Visual speed
+                      </Label>
+                      <Select value={speed} onValueChange={setSpeed}>
+                        <SelectTrigger id="visual-speed" className="h-9 w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="600">Slow · 600 ms</SelectItem>
+                          <SelectItem value="300">Normal · 300 ms</SelectItem>
+                          <SelectItem value="80">Fast · 80 ms</SelectItem>
+                          <SelectItem value="1">Maximum</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label
+                        htmlFor="clock-speed"
+                        className="text-[11px] uppercase tracking-wider text-slate-500"
+                      >
+                        Clock frequency
+                      </Label>
+                      <Select value={clock} onValueChange={setClock}>
+                        <SelectTrigger id="clock-speed" className="h-9 w-36">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">1 MHz</SelectItem>
+                          <SelectItem value="3.072">3.072 MHz</SelectItem>
+                          <SelectItem value="5">5 MHz</SelectItem>
+                          <SelectItem value="6">6 MHz</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="ml-auto grid grid-cols-3 gap-2">
+                      <Metric label="Instructions" value={cpu.instructions} />
+                      <Metric label="T-states" value={cpu.tStates} />
+                      <Metric
+                        label="Duration"
+                        value={`${(cpu.tStates / Number(clock)).toFixed(2)} µs`}
+                      />
+                    </div>
                   </div>
-                  <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-2">
-                    <Label htmlFor="clock-speed">Clock frequency</Label>
-                    <Select value={clock} onValueChange={setClock}>
-                      <SelectTrigger id="clock-speed"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="1">1 MHz</SelectItem><SelectItem value="3.072">3.072 MHz</SelectItem><SelectItem value="5">5 MHz</SelectItem><SelectItem value="6">6 MHz</SelectItem></SelectContent>
-                    </Select>
-                  </div>
-                  <div className="ml-auto grid grid-cols-3 divide-x divide-slate-800 rounded-lg border border-slate-800 bg-slate-950/70 text-xs">
-                    <Metric label="Instructions" value={cpu.instructions} />
-                    <Metric label="T-states" value={cpu.tStates} />
-                    <Metric
-                      label="Duration"
-                      value={`${(cpu.tStates / Number(clock)).toFixed(2)} µs`}
+                  <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2.5 font-mono text-xs">
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${running ? "animate-pulse bg-emerald-400" : cpu.halted ? "bg-amber-400" : "bg-cyan-400"}`}
                     />
-                  </div>
-                  <div className="w-full rounded-lg border border-cyan-400/15 bg-slate-950/70 px-3 py-2 font-mono text-xs text-cyan-100">
-                    <span className="mr-2 text-slate-500">Last operation</span>
-                    {lastOperation}
+                    <span className="text-slate-500">Last operation</span>
+                    <span className="text-cyan-100">{lastOperation}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -921,12 +1444,17 @@ function App() {
                   <Input
                     id="memory-page"
                     value={pageAddress}
-                    onChange={(e) => setPageAddress(e.target.value.toUpperCase())}
+                    onChange={(e) =>
+                      setPageAddress(e.target.value.toUpperCase())
+                    }
                     onBlur={() => {
                       const address = parse(pageAddress);
                       if (Number.isNaN(address)) {
                         setPageAddress(hex(page * 256, 4));
-                        notify("Enter a hexadecimal address between 0000H and FFFFH.", "error");
+                        notify(
+                          "Enter a hexadecimal address between 0000H and FFFFH.",
+                          "error",
+                        );
                       } else setPage(Math.min(255, Math.max(0, address >> 8)));
                     }}
                     onKeyDown={(event) => {
@@ -945,33 +1473,54 @@ function App() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="mb-5 grid gap-3 rounded-xl border border-slate-800 bg-slate-900/30 p-4 md:grid-cols-[auto_150px_minmax(260px,1fr)_auto] md:items-end">
-                  <div className="text-sm font-medium text-slate-300">
-                    Pre-fill memory
+                <div className="mb-5 rounded-xl border border-slate-800 bg-slate-900/30 p-4">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-medium text-slate-200">
+                      Pre-fill memory
+                    </h3>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Write hex bytes separated by spaces, or ASCII text in
+                      quotes (e.g. 'HELLO'), starting at an address.
+                    </p>
                   </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="fill-address">Start address</Label>
-                    <Input
-                      id="fill-address"
-                      value={fillAddress}
-                      onChange={(e) => setFillAddress(e.target.value)}
-                      placeholder="e.g. 9000"
-                      className="font-mono text-amber-200"
-                    />
+                  <div className="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)_auto] md:items-end">
+                    <div className="grid gap-1.5">
+                      <Label
+                        htmlFor="fill-address"
+                        className="text-[11px] uppercase tracking-wider text-slate-500"
+                      >
+                        Start address
+                      </Label>
+                      <Input
+                        id="fill-address"
+                        value={fillAddress}
+                        onChange={(e) => setFillAddress(e.target.value)}
+                        placeholder="e.g. 9000"
+                        className="h-10 font-mono text-amber-200"
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label
+                        htmlFor="fill-data"
+                        className="text-[11px] uppercase tracking-wider text-slate-500"
+                      >
+                        Data bytes or ASCII
+                      </Label>
+                      <Input
+                        id="fill-data"
+                        value={fillData}
+                        onChange={(e) => setFillData(e.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") prefill();
+                        }}
+                        placeholder="14 2F 0A or 'HELLO'"
+                        className="h-10 font-mono text-amber-200"
+                      />
+                    </div>
+                    <Button className="h-10 px-5" onClick={prefill}>
+                      Write bytes
+                    </Button>
                   </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="fill-data">Data bytes or ASCII</Label>
-                    <Input
-                      id="fill-data"
-                      value={fillData}
-                      onChange={(e) => setFillData(e.target.value)}
-                      placeholder="14 2F 0A or 'HELLO'"
-                      className="font-mono text-amber-200"
-                    />
-                  </div>
-                  <Button size="sm" onClick={prefill}>
-                    Write bytes
-                  </Button>
                 </div>
                 <div className="overflow-auto rounded-lg border border-slate-800">
                   <table className="w-full min-w-[850px] text-center font-mono text-xs">
@@ -1022,7 +1571,16 @@ function App() {
                   size="sm"
                   variant="outline"
                   onClick={() =>
-                    setPorts((x) => [...x, (Math.max(...x) + 1) & 255])
+                    setPorts((x) => {
+                      const after = x.length ? Math.max(...x) + 1 : 0;
+                      const next =
+                        after <= 255
+                          ? after
+                          : Array.from({ length: 256 }, (_, i) => i).find(
+                              (i) => !x.includes(i),
+                            );
+                      return next === undefined ? x : [...x, next];
+                    })
                   }
                 >
                   <Plus size={14} />
@@ -1030,6 +1588,11 @@ function App() {
                 </Button>
               </CardHeader>
               <CardContent>
+                {ports.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-slate-800 p-6 text-center text-xs text-slate-500">
+                    No port monitors. Use "Add monitor" to watch a port.
+                  </p>
+                )}
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   {ports.map((p) => (
                     <div
@@ -1040,7 +1603,20 @@ function App() {
                         <b className="font-mono text-cyan-300">
                           PORT {hex(p)}H
                         </b>
-                        <Wifi size={15} className="text-slate-600" />
+                        <div className="flex items-center gap-1">
+                          <Wifi size={15} className="text-slate-600" />
+                          <button
+                            type="button"
+                            aria-label={`Remove port ${hex(p)}H`}
+                            title="Remove monitor"
+                            onClick={() =>
+                              setPorts((x) => x.filter((port) => port !== p))
+                            }
+                            className="rounded p-1 text-slate-500 transition-colors hover:bg-rose-400/10 hover:text-rose-300"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
                       <Label htmlFor={`port-input-${p}`} className="mt-4 block">
                         Input buffer (IN)
@@ -1076,26 +1652,59 @@ function App() {
                 <CardContent className="space-y-4">
                   <div className="grid gap-1">
                     <Label htmlFor="report-title">Experiment title</Label>
-                    <Input id="report-title" value={reportTitle} onChange={(e) => setReportTitle(e.target.value)} />
+                    <Input
+                      id="report-title"
+                      value={reportTitle}
+                      onChange={(e) => setReportTitle(e.target.value)}
+                    />
                   </div>
                   <div>
                     <p className="mb-2 text-xs font-medium text-slate-400">
                       Include memory ranges
                     </p>
-                    {ranges.length === 0 && <p className="mb-3 rounded-md border border-slate-800 bg-slate-900/40 p-2 text-xs text-slate-500">Default report dump: 9000H–900FH. Adding a custom range replaces this default; source DB/DW data blocks are always included.</p>}
+                    {ranges.length === 0 && (
+                      <p className="mb-3 rounded-md border border-slate-800 bg-slate-900/40 p-2 text-xs text-slate-500">
+                        No custom ranges selected. Only the program code and any
+                        DB/DW data blocks from your source are dumped.
+                      </p>
+                    )}
                     {ranges.map((r, i) => (
                       <div
                         key={i}
                         className="mb-2 grid grid-cols-[1fr_1fr_auto] items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/50 p-2"
                       >
-                        <Input aria-label={`Report range ${i + 1} start`} value={hex(r[0], 4)} onChange={(event) => {
-                          const value = parse(event.target.value);
-                          if (!Number.isNaN(value)) setRanges((all) => all.map((range, index) => index === i ? [value & 0xffff, range[1]] : range));
-                        }} className="h-8 font-mono text-xs" />
-                        <Input aria-label={`Report range ${i + 1} end`} value={hex(r[1], 4)} onChange={(event) => {
-                          const value = parse(event.target.value);
-                          if (!Number.isNaN(value)) setRanges((all) => all.map((range, index) => index === i ? [range[0], value & 0xffff] : range));
-                        }} className="h-8 font-mono text-xs" />
+                        <Input
+                          aria-label={`Report range ${i + 1} start`}
+                          value={hex(r[0], 4)}
+                          onChange={(event) => {
+                            const value = parse(event.target.value);
+                            if (!Number.isNaN(value))
+                              setRanges((all) =>
+                                all.map((range, index) =>
+                                  index === i
+                                    ? [value & 0xffff, range[1]]
+                                    : range,
+                                ),
+                              );
+                          }}
+                          className="h-8 font-mono text-xs"
+                        />
+                        <Input
+                          aria-label={`Report range ${i + 1} end`}
+                          value={hex(r[1], 4)}
+                          onChange={(event) => {
+                            const value = parse(event.target.value);
+                            if (!Number.isNaN(value))
+                              setRanges((all) =>
+                                all.map((range, index) =>
+                                  index === i
+                                    ? [range[0], value & 0xffff]
+                                    : range,
+                                ),
+                              );
+                          }}
+                          className="h-8 font-mono text-xs"
+                        />
                         <button
                           aria-label={`Remove report range ${i + 1}`}
                           onClick={() =>
@@ -1110,11 +1719,46 @@ function App() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => setRanges((x) => [...x, [0x9100, 0x910f]])}
+                      // starts with a visible, removable row
+                      onClick={() => setRanges((x) => [...x, [0x9000, 0x900f]])}
                     >
                       <Plus size={14} />
                       Add range
                     </Button>
+                  </div>
+                  <div className="space-y-2 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+                    <p className="text-xs font-medium text-slate-400">
+                      I/O port summary
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="report-io"
+                        checked={showIo}
+                        onCheckedChange={(value) => setShowIo(value === true)}
+                      />
+                      <Label
+                        htmlFor="report-io"
+                        className="text-xs font-normal text-slate-300"
+                      >
+                        Include section in report
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="report-io-input"
+                        checked={showIoInput}
+                        disabled={!showIo}
+                        onCheckedChange={(value) =>
+                          setShowIoInput(value === true)
+                        }
+                      />
+                      <Label
+                        htmlFor="report-io-input"
+                        className={`text-xs font-normal ${showIo ? "text-slate-300" : "cursor-not-allowed text-slate-600"}`}
+                      >
+                        Show input buffer column
+                      </Label>
+                    </div>
                   </div>
                   <Button
                     className="w-full"
@@ -1129,14 +1773,7 @@ function App() {
                   <Button
                     className="w-full"
                     variant="secondary"
-                    onClick={() => {
-                      setReport(true);
-                      navigator.clipboard.writeText(
-                        document.querySelector(".font-serif")?.textContent ??
-                          "",
-                      );
-                      notify("Report copied for MS Word.");
-                    }}
+                    onClick={copyForWord}
                   >
                     <ClipboardCopy size={15} />
                     Copy for MS Word
@@ -1144,13 +1781,7 @@ function App() {
                   <Button
                     className="w-full"
                     variant="outline"
-                    onClick={() => {
-                      setReport(true);
-                      const report = document.querySelector(".report-document")?.outerHTML;
-                      if (!report) return;
-                      downloadFile("8085-lab-report.html", `<!doctype html><html><head><meta charset="utf-8"><title>${reportTitle}</title><style>body{max-width:1200px;margin:32px auto;font-family:Georgia,serif}table{width:100%;border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:8px}</style></head><body>${report}</body></html>`, "text/html");
-                      notify("HTML report downloaded.");
-                    }}
+                    onClick={downloadReport}
                   >
                     <Download size={15} />
                     Download HTML
@@ -1192,9 +1823,11 @@ function App() {
 }
 function Metric({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="px-5 py-2">
-      <span className="block text-slate-500">{label}</span>
-      <b className="font-mono text-cyan-300">{value}</b>
+    <div className="min-w-[104px] rounded-lg border border-slate-800 bg-slate-950/70 px-4 py-2">
+      <span className="block text-[11px] uppercase tracking-wider text-slate-500">
+        {label}
+      </span>
+      <b className="font-mono text-base text-cyan-300">{value}</b>
     </div>
   );
 }
@@ -1234,11 +1867,15 @@ function Report({
   listing,
   ranges,
   ports,
+  showIo,
+  showIoInput,
 }: {
   title: string;
   listing: Listing[];
   ranges: [number, number][];
   ports: number[];
+  showIo: boolean;
+  showIoInput: boolean;
 }) {
   const codeStart = listing[0]?.address ?? 0,
     codeEnd =
@@ -1298,7 +1935,9 @@ function Report({
               <tr key={l.address} className="border border-slate-200">
                 <td className="p-2 text-blue-700">{hex(l.address, 4)}H</td>
                 <td className="p-2">{l.bytes.map((b) => hex(b)).join(" ")}</td>
-                <td className="whitespace-pre-wrap p-2 leading-5">{reportHighlight(l.text)}</td>
+                <td className="whitespace-pre-wrap p-2 leading-5">
+                  {reportHighlight(l.text)}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -1321,37 +1960,43 @@ function Report({
           </div>
         ))}
       </section>
-      <section className="mt-7">
-        <h2 className="border-l-4 border-cyan-600 pl-3 font-sans text-lg font-bold">
-          4. I/O port summary
-        </h2>
-        <table className="mt-3 w-full border-collapse font-mono text-[11px]">
-          <thead className="bg-slate-100">
-            <tr>
-              <th className="border border-slate-300 p-2 text-left">Port</th>
-              <th className="border border-slate-300 p-2 text-left">
-                Input Buffer
-              </th>
-              <th className="border border-slate-300 p-2 text-left">
-                Output Latch
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {ports.map((p) => (
-              <tr key={p}>
-                <td className="border border-slate-300 p-2">{hex(p)}H</td>
-                <td className="border border-slate-300 p-2">
-                  {hex(cpu.inputs[p])}H ({cpu.inputs[p]})
-                </td>
-                <td className="border border-slate-300 p-2">
-                  {hex(cpu.outputs[p])}H ({cpu.outputs[p]})
-                </td>
+      {showIo && (
+        <section className="mt-7">
+          <h2 className="border-l-4 border-cyan-600 pl-3 font-sans text-lg font-bold">
+            4. I/O port summary
+          </h2>
+          <table className="mt-3 w-full border-collapse font-mono text-[11px]">
+            <thead className="bg-slate-100">
+              <tr>
+                <th className="border border-slate-300 p-2 text-left">Port</th>
+                {showIoInput && (
+                  <th className="border border-slate-300 p-2 text-left">
+                    Input Buffer
+                  </th>
+                )}
+                <th className="border border-slate-300 p-2 text-left">
+                  Output Latch
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+            </thead>
+            <tbody>
+              {ports.map((p) => (
+                <tr key={p}>
+                  <td className="border border-slate-300 p-2">{hex(p)}H</td>
+                  {showIoInput && (
+                    <td className="border border-slate-300 p-2">
+                      {hex(cpu.inputs[p])}H ({cpu.inputs[p]})
+                    </td>
+                  )}
+                  <td className="border border-slate-300 p-2">
+                    {hex(cpu.outputs[p])}H ({cpu.outputs[p]})
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
     </article>
   );
 }
