@@ -69,7 +69,7 @@ const rawSamplePrograms = [
     name: "Addition of two 8-bit numbers",
     description: "Adds two registers and stores the result at 9000H.",
     code: `; Addition of two 8-bit numbers
-ORG 8000H
+; ORG 8000H
 LXI SP, FFFFH
 MVI A, 14H
 MVI B, 2FH
@@ -77,28 +77,28 @@ ADD B
 STA 9000H
 HLT
 
-REPORT 9000H, 01H`,
+; REPORT 9000H, 01H`,
   },
   {
     id: "sub",
     name: "Subtraction",
     description: "Subtracts one 8-bit value from another.",
     code: `; Subtraction
-ORG 8000H
+; ORG 8000H
 MVI A, 50H
 MVI B, 18H
 SUB B
 STA 9000H
 HLT
 
-REPORT 9000H, 01H`,
+; REPORT 9000H, 01H`,
   },
   {
     id: "sum-array",
     name: "Sum an array",
     description: "Sums four bytes stored in memory.",
     code: `; Sum four bytes
-ORG 8000H
+; ORG 8000H
 LXI H, 9000H
 MVI B, 04H
 MVI A, 00H
@@ -108,17 +108,17 @@ DCR B
 JNZ LOOP
 STA 9010H
 HLT
-ORG 9000H
-DATA: DB 05H, 03H, 09H, 01H
+; ORG 9000H
+; DATA: DB 05H, 03H, 09H, 01H
 
-REPORT 9010H, 01H`,
+; REPORT 9010H, 01H`,
   },
   {
     id: "largest",
     name: "Find largest number",
     description: "Finds the largest value in a four-byte array.",
     code: `; Find largest value
-ORG 8000H
+; ORG 8000H
 LXI H, 9000H
 MOV A, M
 INX H
@@ -131,17 +131,17 @@ DCR B
 JNZ LOOP
 STA 9010H
 HLT
-ORG 9000H
-DB 23H, 7AH, 19H, 4CH
+; ORG 9000H
+; DB 23H, 7AH, 19H, 4CH
 
-REPORT 9010H, 01H`,
+; REPORT 9010H, 01H`,
   },
   {
     id: "smallest",
     name: "Find smallest number",
     description: "Finds the smallest value in a four-byte array.",
     code: `; Find smallest value
-ORG 8000H
+; ORG 8000H
 LXI H, 9000H
 MOV A, M
 INX H
@@ -154,17 +154,17 @@ DCR B
 JNZ LOOP
 STA 9010H
 HLT
-ORG 9000H
-DB 23H, 7AH, 19H, 4CH
+; ORG 9000H
+; DB 23H, 7AH, 19H, 4CH
 
-REPORT 9010H, 01H`,
+; REPORT 9010H, 01H`,
   },
   {
     id: "copy-block",
     name: "Copy a memory block",
     description: "Copies four bytes from one memory area to another.",
     code: `; Copy 4 bytes
-ORG 8000H
+; ORG 8000H
 LXI H, 9000H
 LXI D, 9010H
 MVI B, 04H
@@ -175,17 +175,17 @@ INX D
 DCR B
 JNZ LOOP
 HLT
-ORG 9000H
-DB 11H, 22H, 33H, 44H
+; ORG 9000H
+; DB 11H, 22H, 33H, 44H
 
-REPORT 9010H, 04H`,
+; REPORT 9010H, 04H`,
   },
   {
     id: "count-zero",
     name: "Count zero values",
     description: "Counts zero bytes in an array.",
     code: `; Count zeros
-ORG 8000H
+; ORG 8000H
 LXI H, 9000H
 MVI B, 05H
 MVI C, 00H
@@ -199,17 +199,17 @@ JNZ LOOP
 MOV A, C
 STA 9010H
 HLT
-ORG 9000H
-DB 00H, 14H, 00H, 27H, 00H
+; ORG 9000H
+; DB 00H, 14H, 00H, 27H, 00H
 
-REPORT 9010H, 01H`,
+; REPORT 9010H, 01H`,
   },
   {
     id: "even-odd",
     name: "Count even and odd numbers",
     description: "Separately counts even and odd values.",
     code: `; Count even and odd values
-ORG 8000H
+; ORG 8000H
 LXI H, 9000H
 MVI B, 06H
 MVI C, 00H
@@ -228,17 +228,17 @@ STA 9010H
 MOV A, D
 STA 9011H
 HLT
-ORG 9000H
-DB 10H, 11H, 20H, 21H, 30H, 31H
+; ORG 9000H
+; DB 10H, 11H, 20H, 21H, 30H, 31H
 
-REPORT 9010H, 02H`,
+; REPORT 9010H, 02H`,
   },
   {
     id: "increment-array",
     name: "Increment an array",
     description: "Increments every byte in a five-byte array.",
     code: `; Increment each array element
-ORG 8000H
+; ORG 8000H
 LXI H, 9000H
 MVI B, 05H
 LOOP: INR M
@@ -246,17 +246,17 @@ INX H
 DCR B
 JNZ LOOP
 HLT
-ORG 9000H
-DB 10H, 20H, 30H, 40H, 50H
+; ORG 9000H
+; DB 10H, 20H, 30H, 40H, 50H
 
-REPORT 9000H, 05H`,
+; REPORT 9000H, 05H`,
   },
   {
     id: "sort-ascending",
     name: "Bubble sort ascending",
     description: "Sorts four bytes in ascending order.",
     code: `; Bubble sort, 4 elements
-ORG 8000H
+; ORG 8000H
 MVI C, 03H
 PASS: LXI H, 9000H
 MVI B, 03H
@@ -275,17 +275,17 @@ JNZ LOOP
 DCR C
 JNZ PASS
 HLT
-ORG 9000H
-DB 42H, 11H, 37H, 05H
+; ORG 9000H
+; DB 42H, 11H, 37H, 05H
 
-REPORT 9000H, 04H`,
+; REPORT 9000H, 04H`,
   },
   {
     id: "factorial",
     name: "Factorial",
     description: "Computes 5! using repeated addition.",
     code: `; 5! using repeated addition
-ORG 8000H
+; ORG 8000H
 MVI A, 05H
 MVI C, 04H
 OUTER: MOV D, A
@@ -299,14 +299,14 @@ JNZ OUTER
 STA 9000H
 HLT
 
-REPORT 9000H, 01H`,
+; REPORT 9000H, 01H`,
   },
   {
     id: "delay",
     name: "Software delay loop",
     description: "Demonstrates nested decrement loops and timing.",
     code: `; Software delay
-ORG 8000H
+; ORG 8000H
 MVI B, 05H
 OUTER: MVI C, 0FFH
 INNER: DCR C
@@ -321,20 +321,20 @@ HLT`,
     description:
       "Reads an input port, stores it, then writes it to an output port.",
     code: `; I/O demonstration
-ORG 8000H
+; ORG 8000H
 IN 10H
 STA 9000H
 OUT 11H
 HLT
 
-REPORT 9000H, 01H`,
+; REPORT 9000H, 01H`,
   },
   {
     id: "stack",
     name: "Stack and subroutine",
     description: "Demonstrates CALL, RET, PUSH and POP.",
     code: `; Stack and subroutine demo
-ORG 8000H
+; ORG 8000H
 LXI SP, FFFFH
 MVI A, 25H
 CALL DOUBLE
@@ -345,7 +345,7 @@ ADD A
 POP PSW
 RET
 
-REPORT 9000H, 01H`,
+; REPORT 9000H, 01H`,
   },
   {
     id: "interrupt",
@@ -353,13 +353,13 @@ REPORT 9000H, 01H`,
     description:
       "Places an RST 7.5 service routine at 003CH for debugger interrupt testing.",
     code: `; Interrupt demo
-ORG 8000H
+; ORG 8000H
 LXI SP, FFFFH
 MVI A, 10H
 EI
 MAIN: INR A
 JMP MAIN
-ORG 003CH
+; ORG 003CH
 PUSH PSW
 INR A
 STA 9000H
@@ -367,14 +367,14 @@ POP PSW
 EI
 RET
 
-REPORT 9000H, 01H`,
+; REPORT 9000H, 01H`,
   },
   {
     id: "memory-test",
     name: "Memory read/write test",
     description: "Writes known bytes and reads them back through HL.",
     code: `; Memory test
-ORG 8000H
+; ORG 8000H
 LXI H, 9000H
 MVI M, 55H
 INX H
@@ -384,7 +384,7 @@ MOV A, M
 STA 9010H
 HLT
 
-REPORT 9010H, 01H`,
+; REPORT 9010H, 01H`,
   },
 ] as const;
 
@@ -438,9 +438,23 @@ function formatSampleCode(source: string) {
   const output: string[] = [];
   for (const raw of source.split("\n")) {
     const trimmed = raw.trim();
-    if (!trimmed || trimmed.startsWith(";") || trimmed.startsWith("```")) {
+    if (!trimmed || trimmed.startsWith("```")) {
       output.push(raw);
       previousWasBlank = !trimmed;
+      continue;
+    }
+
+    if (trimmed.startsWith(";")) {
+      const metadata = splitCommentDirective(trimmed);
+      if (metadata.op) {
+        const startsNewMetadataBlock =
+          emittedMeaningful &&
+          (metadata.op === "ORG" || metadata.op === "REPORT") &&
+          !previousWasBlank;
+        if (startsNewMetadataBlock) output.push("");
+      }
+      output.push(raw);
+      previousWasBlank = false;
       continue;
     }
 
@@ -913,6 +927,11 @@ function splitSource(raw: string) {
   if (match) {
     label = match[1].toUpperCase();
     code = match[2];
+  } else if (/^[\w.$]+:\s*$/.test(code)) {
+    // A label may occupy its own source line, e.g. `NOSWAP:`.
+    // It defines an address but does not emit an instruction.
+    label = code.slice(0, -1).trim().toUpperCase();
+    code = "";
   }
   const [op = "", ...rest] = code.split(/\s+/);
   return {
@@ -925,6 +944,42 @@ function splitSource(raw: string) {
       .filter(Boolean),
   };
 }
+function splitCommentDirective(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith(";"))
+    return { label: "", op: "", args: [] as string[] };
+  const comment = trimmed.slice(1).trim();
+  if (!comment) return { label: "", op: "", args: [] as string[] };
+  // Commented assembler metadata is intentionally invisible to disassembly.
+  // Supported forms: ; ORG 9000H, ; DATA: DB 01H, 02H, ; REPORT 9010H, 02H
+  const directive = comment.split(";")[0].trim();
+  const match = directive.match(/^([\w.$]+:)?\s*([A-Za-z]+)\b(?:\s+(.*))?$/);
+  if (!match) return { label: "", op: "", args: [] as string[] };
+  const label = (match[1]?.slice(0, -1) ?? "").toUpperCase();
+  const op = (match[2] ?? "").toUpperCase();
+  if (!["ORG", "DB", "DW", "REPORT"].includes(op))
+    return { label: "", op: "", args: [] as string[] };
+  const args = (match[3] ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  // A bare `; REPORT` is a heading/comment, not a report directive.
+  // Only REPORT with actual operands is treated as metadata.
+  if (op === "REPORT" && args.length === 0)
+    return { label: "", op: "", args: [] as string[] };
+  return { label, op, args };
+}
+
+function parseAssemblyLine(raw: string) {
+  const direct = splitSource(raw);
+  // A standalone label such as `NOSWAP:` has no opcode, but it is still a
+  // real source statement and must survive parsing so the first pass can
+  // register its address for later jumps.
+  if (direct.op || direct.label) return { ...direct, metadata: false };
+  const commented = splitCommentDirective(raw);
+  return { ...commented, metadata: Boolean(commented.op) };
+}
+
 function instructionBytes(
   op: string,
   args: string[],
@@ -1077,25 +1132,22 @@ function assembleSource(source: string, start: number) {
   const symbols = new Map<string, number>();
   let address = start;
   const lines = source.split("\n");
-  for (const raw of lines) {
-    const { label, op, args } = splitSource(raw);
+  const parsed = lines.map(parseAssemblyLine);
+
+  // Pass 1: resolve addresses for both real instructions and commented data/ORG metadata.
+  for (const statement of parsed) {
+    const { label, op, args } = statement;
     if (label) symbols.set(label, address);
     if (!op) continue;
     if (op === "ORG") {
       const target = parse(args[0]);
-      // Keep the live parser stable while an ORG operand is incomplete.
       if (!Number.isNaN(target)) address = target;
       continue;
     }
-    if (op === "REPORT") {
-      // REPORT is a simulator/reporting directive: it consumes no program memory.
-      continue;
-    }
+    if (op === "REPORT") continue;
     if (op === "DB") address += args.length;
     else if (op === "DW") address += args.length * 2;
-    else if (op !== "END") {
-      // During live editing an instruction may be incomplete (e.g. "RE" while
-      // typing RET). Never let the sizing pass throw into React rendering.
+    else if (!statement.metadata && op !== "END") {
       try {
         address += instructionBytes(op, args, symbols, true).length;
       } catch {
@@ -1103,13 +1155,16 @@ function assembleSource(source: string, start: number) {
       }
     }
   }
+
   address = start;
   const listing: Listing[] = [];
   const errors: string[] = [];
   const dataRanges: [number, number][] = [];
   const reportRanges: [number, number][] = [];
-  lines.forEach((raw, index) => {
-    const { op, args } = splitSource(raw);
+  const dataBlocks: { address: number; bytes: number[]; text: string }[] = [];
+
+  parsed.forEach((statement, index) => {
+    const { label, op, args, metadata } = statement;
     if (!op) return;
     try {
       if (op === "ORG") {
@@ -1124,8 +1179,9 @@ function assembleSource(source: string, start: number) {
         reportRanges.push(parseReportRange(args));
         return;
       }
+
       let bytes: number[];
-      if (op === "DB")
+      if (op === "DB") {
         bytes = args.flatMap((x) =>
           /^['\"].*['\"]$/.test(x)
             ? [...x.slice(1, -1)].map((c) => c.charCodeAt(0))
@@ -1135,28 +1191,40 @@ function assembleSource(source: string, start: number) {
                 return [value & 255];
               })(),
         );
-      else if (op === "DW")
+      } else if (op === "DW") {
         bytes = args.flatMap((x) => {
           const n = symbols.get(x.toUpperCase()) ?? parse(x);
           if (Number.isNaN(n)) throw Error(`Unknown DW value '${x}'`);
           return [n & 255, (n >> 8) & 255];
         });
-      else bytes = instructionBytes(op, args, symbols);
-      listing.push({ address, bytes, text: raw, line: index + 1 });
-      if ((op === "DB" || op === "DW") && bytes.length)
-        dataRanges.push([address, (address + bytes.length - 1) & 0xffff]);
+      } else {
+        bytes = instructionBytes(op, args, symbols);
+      }
+
+      if (op === "DB" || op === "DW") {
+        if (bytes.length) {
+          dataRanges.push([address, (address + bytes.length - 1) & 0xffff]);
+          dataBlocks.push({ address, bytes, text: lines[index] });
+        }
+      } else if (!metadata) {
+        // Only real source instructions enter the disassembly/listing.
+        listing.push({ address, bytes, text: lines[index], line: index + 1 });
+      }
       address += bytes.length;
     } catch (e) {
       errors.push(`Line ${index + 1}: ${(e as Error).message}`);
     }
   });
+
   return {
     listing,
     errors,
     dataRanges: mergeRanges(dataRanges),
     reportRanges: mergeRanges(reportRanges),
+    dataBlocks,
   };
 }
+
 const colorCache = new Map<string, string>();
 let colorCtx: CanvasRenderingContext2D | null = null;
 // Word cannot read oklch()/lab() colors that Tailwind v4 emits, so normalise to rgb().
@@ -2485,9 +2553,7 @@ function TimingWave({
 
 function CycleTimingCard({ listing }: { listing: Listing[] }) {
   const instructions = listing.filter((line) => timingFor(line));
-  const data = listing.filter((line) =>
-    ["DB", "DW"].includes(splitSource(line.text).op),
-  );
+  const data = [] as Listing[];
   const totalT = instructions.reduce(
     (sum, line) => sum + Number(timingFor(line)?.tStates ?? 0),
     0,
@@ -2758,6 +2824,13 @@ function App() {
         const address = (l.address + offset) & 0xffff;
         cpu.memory[address] = byte;
         programmed.current.add(address);
+      }),
+    );
+    assembled.dataBlocks.forEach(({ address, bytes }) =>
+      bytes.forEach((byte, offset) => {
+        const target = (address + offset) & 0xffff;
+        cpu.memory[target] = byte;
+        programmed.current.add(target);
       }),
     );
     cpu.reset(listing[0]?.address ?? pc);
@@ -3290,8 +3363,8 @@ function App() {
                           Report memory annotations
                         </b>
                         <p className="mt-1 text-slate-400">
-                          REPORT directives show runtime memory without
-                          allocating or writing bytes.
+                          Commented REPORT directives show runtime memory
+                          without allocating or writing bytes.
                         </p>
                         <div className="mt-2 flex flex-wrap gap-1 font-mono text-cyan-200">
                           {assembled.reportRanges.map(([start, end]) => (
@@ -3314,30 +3387,36 @@ function App() {
                   <CardContent className="space-y-2 text-xs text-slate-400">
                     <p>
                       <kbd className="rounded bg-slate-800 px-1.5 py-1">
-                        ORG
+                        ; ORG
                       </kbd>{" "}
-                      chooses the load address.
+                      selects a memory location for the data metadata; because
+                      it starts with <code>;</code>, it does not appear in
+                      disassembly.
                     </p>
                     <p>
-                      <kbd className="rounded bg-slate-800 px-1.5 py-1">DB</kbd>
+                      <kbd className="rounded bg-slate-800 px-1.5 py-1">
+                        ; DB
+                      </kbd>
                       /
-                      <kbd className="rounded bg-slate-800 px-1.5 py-1">DW</kbd>{" "}
-                      writes data to memory;
-                      <kbd className="ml-1 rounded bg-slate-800 px-1.5 py-1">
-                        REPORT
+                      <kbd className="rounded bg-slate-800 px-1.5 py-1">
+                        ; DW
                       </kbd>{" "}
-                      only includes an existing memory range in the report.
+                      defines initial data memory without appearing in
+                      disassembly;
+                      <kbd className="ml-1 rounded bg-slate-800 px-1.5 py-1">
+                        ; REPORT
+                      </kbd>{" "}
+                      only includes existing runtime memory in the report.
                     </p>
                     <p>
                       Example:{" "}
                       <code className="text-violet-200">
-                        ORG 2050H
+                        ; ORG 2050H
                         <br />
-                        ARRAY: DB 05H, 03H, 09H, 01H
+                        ; ARRAY: DB 05H, 03H, 09H, 01H
                         <br />
                         STA 9010H
-                        <br />
-                        REPORT 9010H, 01H
+                        <br />; REPORT 9010H, 01H
                       </code>
                     </p>
                     <p>
@@ -3362,35 +3441,38 @@ function App() {
                   </CardHeader>
                   <CardContent className="space-y-3 text-xs text-slate-300">
                     <p>
-                      Use DB/DW when your program needs initial memory values.
-                      Use REPORT when you only want the final/runtime contents
-                      of a memory location in the lab report.
+                      Use commented ORG/DB/DW metadata when you want to define
+                      initial memory without showing it in disassembly. Use a
+                      commented REPORT when you only want runtime memory
+                      included in the lab report.
                     </p>
                     <pre className="overflow-auto rounded-md border border-violet-400/20 bg-slate-950/80 p-3 font-mono text-[11px] leading-5">
-                      <span className="text-amber-300">ORG</span>{" "}
-                      <span className="text-fuchsia-300">2050H</span>
+                      <span className="text-slate-400">; ORG 2050H</span>
                       {"\n"}
-                      <span className="text-emerald-300">ARRAY:</span>{" "}
-                      <span className="text-amber-300">DB</span>{" "}
-                      <span className="text-fuchsia-300">
-                        05H, 03H, 09H, 01H
+                      <span className="text-slate-400">
+                        ; ARRAY: DB 05H, 03H, 09H, 01H
                       </span>
                       {"\n"}
-                      <span className="text-amber-300">REPORT</span>{" "}
-                      <span className="text-fuchsia-300">9010H, 01H</span>
+                      <span className="text-amber-300">STA</span>{" "}
+                      <span className="text-fuchsia-300">9010H</span>
                       {"\n"}
-                      <span className="text-amber-300">REPORT</span>{" "}
-                      <span className="text-fuchsia-300">9020H, 04H</span>
+                      <span className="text-slate-400">
+                        ; REPORT 9010H, 01H
+                      </span>
+                      {"\n"}
+                      <span className="text-slate-400">
+                        ; REPORT 9020H, 04H
+                      </span>
                     </pre>
                     <p>
-                      <b className="text-violet-200">DB</b> and{" "}
-                      <b className="text-violet-200">DW</b> allocate/write
+                      <b className="text-violet-200">; DB</b> and{" "}
+                      <b className="text-violet-200">; DW</b> define initial
                       memory.
                       <b className="ml-1 text-cyan-200">
-                        REPORT address, count
+                        ; REPORT address, count
                       </b>{" "}
                       does not write memory; it tells the lab report to display
-                      that many bytes starting at the address.
+                      that many runtime bytes starting at the address.
                     </p>
                   </CardContent>
                 </Card>
@@ -3928,8 +4010,8 @@ function App() {
                         Source-defined report ranges
                       </p>
                       <p className="mt-1 text-slate-400">
-                        These come from REPORT directives and require no DB/DW
-                        declaration.
+                        These come from commented REPORT directives and require
+                        no DB/DW declaration.
                       </p>
                       <div className="mt-2 flex flex-wrap gap-1 font-mono text-cyan-200">
                         {assembled.reportRanges.map(([start, end]) => (
@@ -3949,8 +4031,8 @@ function App() {
                     </p>
                     {ranges.length === 0 && (
                       <p className="mb-3 rounded-md border border-slate-800 bg-slate-900/40 p-2 text-xs text-slate-500">
-                        No custom ranges selected. Program code, DB/DW data
-                        blocks, and REPORT ranges from your source are included
+                        No custom ranges selected. Program code and all
+                        data/report memory ranges from your source are included
                         automatically.
                       </p>
                     )}
@@ -4237,32 +4319,7 @@ function Report({
       </div>
       <section className="mt-7">
         <h2 className="border-l-4 border-cyan-600 pl-3 font-sans text-lg font-bold">
-          1. Final processor state
-        </h2>
-        <div className="mt-3 grid grid-cols-2 gap-2 rounded border border-slate-200 bg-slate-50 p-3 font-mono text-xs sm:grid-cols-4">
-          {[
-            `A: ${hex(cpu.a)}H`,
-            `B: ${hex(cpu.b)}H`,
-            `C: ${hex(cpu.c)}H`,
-            `D: ${hex(cpu.d)}H`,
-            `E: ${hex(cpu.e)}H`,
-            `H: ${hex(cpu.h)}H`,
-            `L: ${hex(cpu.l)}H`,
-            `PC: ${hex(cpu.pc, 4)}H`,
-            `SP: ${hex(cpu.sp, 4)}H`,
-            `S:${cpu.flags.s} Z:${cpu.flags.z} AC:${cpu.flags.ac} P:${cpu.flags.p} CY:${cpu.flags.cy}`,
-          ].map((v) => (
-            <span key={v}>{v}</span>
-          ))}
-        </div>
-        <p className="mt-3 text-sm">
-          <b>Execution metrics:</b> {cpu.instructions} instructions ·{" "}
-          {cpu.machineCycles} machine cycles · {cpu.tStates} T-states
-        </p>
-      </section>
-      <section className="mt-7">
-        <h2 className="border-l-4 border-cyan-600 pl-3 font-sans text-lg font-bold">
-          2. Program source & disassembly
+          1. Program source & disassembly
         </h2>
         <table className="mt-3 w-full border-collapse font-mono text-[11px]">
           <thead className="bg-slate-900 text-white">
@@ -4287,6 +4344,31 @@ function Report({
       </section>
       <section className="mt-7">
         <h2 className="border-l-4 border-cyan-600 pl-3 font-sans text-lg font-bold">
+          2. Final processor state
+        </h2>
+        <div className="mt-3 grid grid-cols-2 gap-2 rounded border border-slate-200 bg-slate-50 p-3 font-mono text-xs sm:grid-cols-4">
+          {[
+            `A: ${hex(cpu.a)}H`,
+            `B: ${hex(cpu.b)}H`,
+            `C: ${hex(cpu.c)}H`,
+            `D: ${hex(cpu.d)}H`,
+            `E: ${hex(cpu.e)}H`,
+            `H: ${hex(cpu.h)}H`,
+            `L: ${hex(cpu.l)}H`,
+            `PC: ${hex(cpu.pc, 4)}H`,
+            `SP: ${hex(cpu.sp, 4)}H`,
+            `S:${cpu.flags.s} Z:${cpu.flags.z} AC:${cpu.flags.ac} P:${cpu.flags.p} CY:${cpu.flags.cy}`,
+          ].map((v) => (
+            <span key={v}>{v}</span>
+          ))}
+        </div>
+        <p className="mt-3 text-sm">
+          <b>Execution metrics:</b> {cpu.instructions} instructions ·{" "}
+          {cpu.machineCycles} machine cycles · {cpu.tStates} T-states
+        </p>
+      </section>
+      <section className="mt-7">
+        <h2 className="border-l-4 border-cyan-600 pl-3 font-sans text-lg font-bold">
           3. Memory dumps
         </h2>
         {codeRanges.map(([s, e], index) => (
@@ -4298,14 +4380,19 @@ function Report({
             <DumpTable start={s} end={e} />
           </div>
         ))}
-        {ranges.map(([s, e]) => (
-          <div key={`${s}-${e}`} className="mt-5">
-            <h3 className="font-sans text-sm font-semibold">
-              Range (Data Memory): {hex(s, 4)}H–{hex(e, 4)}H
-            </h3>
-            <DumpTable start={s} end={e} />
-          </div>
-        ))}
+        {ranges.length > 0 &&
+          (() => {
+            const dataStart = Math.min(...ranges.map(([s]) => s));
+            const dataEnd = Math.max(...ranges.map(([, e]) => e));
+            return (
+              <div className="mt-5">
+                <h3 className="font-sans text-sm font-semibold">
+                  Range (Data Memory): {hex(dataStart, 4)}H–{hex(dataEnd, 4)}H
+                </h3>
+                <DumpTable start={dataStart} end={dataEnd} />
+              </div>
+            );
+          })()}
       </section>
       {showIo && (
         <section className="mt-7">
