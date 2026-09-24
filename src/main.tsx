@@ -322,12 +322,14 @@ HLT`,
       "Reads an input port, stores it, then writes it to an output port.",
     code: `; I/O demonstration
 ; ORG 8000H
+; PORT 10H, 42H
 IN 10H
 STA 9000H
 OUT 11H
 HLT
 
-; REPORT 9000H, 01H`,
+; REPORT 9000H, 01H
+; REPORT PORT 10H, 02H`,
   },
   {
     id: "stack",
@@ -392,6 +394,7 @@ function formatSampleCode(source: string) {
   const comments: Record<string, string> = {
     ORG: "Select the program/data memory address.",
     REPORT: "Include a memory range in the lab report without writing memory.",
+    PORT: "Initialize an input port, e.g. ; PORT 10H, 42H.",
     LXI: "Load a 16-bit value into a register pair.",
     MVI: "Load an immediate 8-bit value.",
     MOV: "Transfer a byte between registers or memory.",
@@ -646,6 +649,7 @@ const parse = (v?: string) =>
 const labels = new Set([
   "ORG",
   "REPORT",
+  "PORT",
   "DB",
   "DW",
   "END",
@@ -951,20 +955,33 @@ function splitCommentDirective(raw: string) {
   const comment = trimmed.slice(1).trim();
   if (!comment) return { label: "", op: "", args: [] as string[] };
   // Commented assembler metadata is intentionally invisible to disassembly.
-  // Supported forms: ; ORG 9000H, ; DATA: DB 01H, 02H, ; REPORT 9010H, 02H
+  // Supported forms include:
+  //   ; ORG 9000H
+  //   ; DATA: DB 01H, 02H
+  //   ; PORT 10H, 42H
+  //   ; REPORT 9010H, 02H
+  //   ; REPORT PORT 10H, 02H
   const directive = comment.split(";")[0].trim();
+  const reportPortMatch = directive.match(/^REPORT\s+PORT\b(?:\s+(.*))?$/i);
+  if (reportPortMatch) {
+    const args = (reportPortMatch[1] ?? "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    if (args.length === 0) return { label: "", op: "", args: [] as string[] };
+    return { label: "", op: "REPORT_PORT", args };
+  }
   const match = directive.match(/^([\w.$]+:)?\s*([A-Za-z]+)\b(?:\s+(.*))?$/);
   if (!match) return { label: "", op: "", args: [] as string[] };
   const label = (match[1]?.slice(0, -1) ?? "").toUpperCase();
   const op = (match[2] ?? "").toUpperCase();
-  if (!["ORG", "DB", "DW", "REPORT"].includes(op))
+  if (!["ORG", "DB", "DW", "PORT", "REPORT"].includes(op))
     return { label: "", op: "", args: [] as string[] };
   const args = (match[3] ?? "")
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
   // A bare `; REPORT` is a heading/comment, not a report directive.
-  // Only REPORT with actual operands is treated as metadata.
   if (op === "REPORT" && args.length === 0)
     return { label: "", op: "", args: [] as string[] };
   return { label, op, args };
@@ -1103,6 +1120,32 @@ function instructionBytes(
   throw Error(`Unsupported instruction '${op}'`);
 }
 
+function parsePortAssignment(args: string[]): [number, number] {
+  const parts = args.length === 1 ? args[0].split(/\s+/).filter(Boolean) : args;
+  const port = parse(parts[0]);
+  const value = parse(parts[1]);
+  if (Number.isNaN(port) || Number.isNaN(value))
+    throw Error("PORT requires a port address and input byte");
+  if (port < 0 || port > 0xff)
+    throw Error("PORT address must be an 8-bit hexadecimal port");
+  if (value < 0 || value > 0xff)
+    throw Error("PORT input value must be an 8-bit hexadecimal byte");
+  return [port & 0xff, value & 0xff];
+}
+
+function parsePortReportRange(args: string[]): [number, number] {
+  const parts = args.length === 1 ? args[0].split(/\s+/).filter(Boolean) : args;
+  const start = parse(parts[0]);
+  const count = parse(parts[1]);
+  if (Number.isNaN(start) || Number.isNaN(count))
+    throw Error("REPORT PORT requires a port address and byte count");
+  if (start < 0 || start > 0xff)
+    throw Error("REPORT PORT address must be an 8-bit hexadecimal port");
+  if (count <= 0 || count > 0x100 || start + count > 0x100)
+    throw Error("REPORT PORT count must be positive and fit in 256 ports");
+  return [start & 0xff, (start + count - 1) & 0xff];
+}
+
 function parseReportRange(args: string[]): [number, number] {
   const start = parse(args[0]);
   const count = parse(args[1]);
@@ -1144,7 +1187,7 @@ function assembleSource(source: string, start: number) {
       if (!Number.isNaN(target)) address = target;
       continue;
     }
-    if (op === "REPORT") continue;
+    if (op === "REPORT" || op === "REPORT_PORT" || op === "PORT") continue;
     if (op === "DB") address += args.length;
     else if (op === "DW") address += args.length * 2;
     else if (!statement.metadata && op !== "END") {
@@ -1161,6 +1204,8 @@ function assembleSource(source: string, start: number) {
   const errors: string[] = [];
   const dataRanges: [number, number][] = [];
   const reportRanges: [number, number][] = [];
+  const portInputs: [number, number][] = [];
+  const portReportRanges: [number, number][] = [];
   const dataBlocks: { address: number; bytes: number[]; text: string }[] = [];
 
   parsed.forEach((statement, index) => {
@@ -1177,6 +1222,14 @@ function assembleSource(source: string, start: number) {
       if (op === "END") return;
       if (op === "REPORT") {
         reportRanges.push(parseReportRange(args));
+        return;
+      }
+      if (op === "REPORT_PORT") {
+        portReportRanges.push(parsePortReportRange(args));
+        return;
+      }
+      if (op === "PORT") {
+        portInputs.push(parsePortAssignment(args));
         return;
       }
 
@@ -1221,6 +1274,8 @@ function assembleSource(source: string, start: number) {
     errors,
     dataRanges: mergeRanges(dataRanges),
     reportRanges: mergeRanges(reportRanges),
+    portInputs,
+    portReportRanges: mergeRanges(portReportRanges),
     dataBlocks,
   };
 }
@@ -2730,6 +2785,7 @@ function App() {
   const stepRef = useRef<(fromTimer?: boolean) => void>(() => {});
   const importInput = useRef<HTMLInputElement>(null);
   const programmed = useRef<Set<number>>(new Set());
+  const programmedPorts = useRef<Set<number>>(new Set());
   const flashTimers = useRef<Map<number, number>>(new Map());
   const history = useRef<CpuHistoryState[]>([]);
   const rerender = () => setTick((x) => x + 1);
@@ -2834,6 +2890,24 @@ function App() {
       }),
     );
     cpu.reset(listing[0]?.address ?? pc);
+    programmedPorts.current.forEach((port) => {
+      cpu.inputs[port] = 0;
+    });
+    programmedPorts.current = new Set();
+    assembled.portInputs.forEach(([port, value]) => {
+      cpu.inputs[port] = value;
+      programmedPorts.current.add(port);
+    });
+    const sourcePorts = new Set<number>();
+    assembled.portInputs.forEach(([port]) => sourcePorts.add(port));
+    assembled.portReportRanges.forEach(([start, end]) => {
+      for (let port = start; port <= end; port += 1) sourcePorts.add(port);
+    });
+    if (sourcePorts.size) {
+      setPorts((current) =>
+        [...new Set([...current, ...sourcePorts])].sort((a, b) => a - b),
+      );
+    }
     setLastOperation("Waiting to execute");
     flashMemory(programmed.current);
     notify(`Assembled ${listing.length} statements at ${hex(cpu.pc, 4)}H`);
@@ -2845,6 +2919,9 @@ function App() {
     stop();
     history.current = [];
     cpu.reset(listing[0]?.address ?? pc);
+    assembled.portInputs.forEach(([port, value]) => {
+      cpu.inputs[port] = value;
+    });
     setLastOperation("Waiting to execute");
     rerender();
     if (!silent) notify("Processor reset.");
@@ -3048,12 +3125,20 @@ function App() {
       ]),
     [assembled.dataRanges, assembled.reportRanges, ranges],
   );
+  const reportPorts = useMemo(() => {
+    const sourcePorts: number[] = [];
+    assembled.portReportRanges.forEach(([start, end]) => {
+      for (let port = start; port <= end; port += 1) sourcePorts.push(port);
+    });
+    return [...new Set([...ports, ...sourcePorts])].sort((a, b) => a - b);
+  }, [ports, assembled.portReportRanges]);
   const reportHTML = (
     <Report
       title={reportTitle}
       listing={listing}
       ranges={reportRanges}
-      ports={ports}
+      ports={reportPorts}
+      portReportRanges={assembled.portReportRanges}
       showIo={showIo}
       showIoInput={showIoInput}
     />
@@ -3378,6 +3463,27 @@ function App() {
                         </div>
                       </div>
                     )}
+                    {assembled.portInputs.length > 0 && (
+                      <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-xs">
+                        <b className="block text-amber-200">
+                          Source-defined input ports
+                        </b>
+                        <p className="mt-1 text-slate-400">
+                          Commented PORT directives initialize the IN buffer
+                          when you assemble the program.
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1 font-mono text-amber-200">
+                          {assembled.portInputs.map(([port, value]) => (
+                            <span
+                              key={`${port}-${value}`}
+                              className="rounded bg-amber-400/10 px-1.5 py-1"
+                            >
+                              {hex(port)}H = {hex(value)}H
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
                 <Card>
@@ -3409,6 +3515,17 @@ function App() {
                       only includes existing runtime memory in the report.
                     </p>
                     <p>
+                      <kbd className="rounded bg-slate-800 px-1.5 py-1">
+                        ; PORT
+                      </kbd>{" "}
+                      initializes an input port without appearing in
+                      disassembly. Use{" "}
+                      <kbd className="rounded bg-slate-800 px-1.5 py-1">
+                        ; REPORT PORT
+                      </kbd>{" "}
+                      to include an I/O range in the lab report.
+                    </p>
+                    <p>
                       Example:{" "}
                       <code className="text-violet-200">
                         ; ORG 2050H
@@ -3416,7 +3533,11 @@ function App() {
                         ; ARRAY: DB 05H, 03H, 09H, 01H
                         <br />
                         STA 9010H
-                        <br />; REPORT 9010H, 01H
+                        <br />
+                        ; REPORT 9010H, 01H
+                        <br />
+                        ; PORT 10H, 42H
+                        <br />; REPORT PORT 10H, 02H
                       </code>
                     </p>
                     <p>
@@ -3910,7 +4031,8 @@ function App() {
                   <CardTitle>Peripheral I/O matrix</CardTitle>
                   <p className="mt-1 text-xs text-slate-500">
                     8085 IN/OUT addressing supports all 256 device ports
-                    (00H–FFH). Add the ports relevant to your lab setup.
+                    (00H–FFH). Use `; PORT` in source to initialize an input
+                    port and `; REPORT PORT` to include ports in the lab report.
                   </p>
                 </div>
                 <Button
@@ -4020,6 +4142,26 @@ function App() {
                             className="rounded bg-cyan-400/10 px-1.5 py-1"
                           >
                             {hex(start, 4)}H–{hex(end, 4)}H
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {assembled.portReportRanges.length > 0 && (
+                    <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/5 p-3 text-xs">
+                      <p className="font-medium text-emerald-200">
+                        Source-defined I/O report ranges
+                      </p>
+                      <p className="mt-1 text-slate-400">
+                        These come from commented REPORT PORT directives.
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1 font-mono text-emerald-200">
+                        {assembled.portReportRanges.map(([start, end]) => (
+                          <span
+                            key={`${start}-${end}`}
+                            className="rounded bg-emerald-400/10 px-1.5 py-1"
+                          >
+                            {hex(start)}H–{hex(end)}H
                           </span>
                         ))}
                       </div>
@@ -4279,6 +4421,7 @@ function Report({
   listing,
   ranges,
   ports,
+  portReportRanges,
   showIo,
   showIoInput,
 }: {
@@ -4286,6 +4429,7 @@ function Report({
   listing: Listing[];
   ranges: [number, number][];
   ports: number[];
+  portReportRanges: [number, number][];
   showIo: boolean;
   showIoInput: boolean;
 }) {
@@ -4399,6 +4543,14 @@ function Report({
           <h2 className="border-l-4 border-cyan-600 pl-3 font-sans text-lg font-bold">
             "4. I/O port summary"
           </h2>
+          {portReportRanges.length > 0 && (
+            <p className="mt-2 text-xs text-slate-500">
+              Source-defined report ports:{" "}
+              {portReportRanges
+                .map(([start, end]) => `${hex(start)}H–${hex(end)}H`)
+                .join(", ")}
+            </p>
+          )}
           <table className="mt-3 w-full border-collapse font-mono text-[11px]">
             <thead className="bg-slate-100">
               <tr>
